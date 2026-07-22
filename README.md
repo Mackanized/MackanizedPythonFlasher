@@ -6,6 +6,23 @@ PythonFlasher is a modern, high-performance Python application and GUI designed 
 
 ---
 
+## 👨‍💻 Author & Attribution
+
+Developed by **Markus Södergren** (**Mackanized**) at **CMS DriveTech AB** in Sweden.
+
+- **Community**: Active member on [TrionicTuning](http://www.trionictuning.com) and [Facebook](https://www.facebook.com/mackanized)
+- **Website & Contact**: [www.mackanized.eu](http://www.mackanized.eu) or via [Facebook](https://www.facebook.com/mackanized)
+
+---
+
+## ☕ Support & Donations (Donationware)
+
+PythonFlasher is free and open-source **Donationware**. If this project helps you tune, repair, or read your vehicle's ECU, contributions are greatly appreciated!
+
+- **PayPal**: `paypal@drivetech.se`
+
+---
+
 ## 📌 Background
 
 In the automotive tuning and repair community, reading and writing ECU firmware often requires expensive proprietary hardware interfaces or legacy OEM software toolchains. 
@@ -103,4 +120,4 @@ pip install -r requirements.txt
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for details.
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
