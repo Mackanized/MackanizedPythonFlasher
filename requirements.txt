@@ -1,0 +1,5 @@
+python-can>=4.3.0
+canlib>=1.22.0
+pyserial>=3.5
+
+#Kvaser drivers and SDK are required for Kvaser CAN interfaces. Please install the Kvaser drivers and SDK from https://www.kvaser.com/downloads/ before using this package with Kvaser hardware.    

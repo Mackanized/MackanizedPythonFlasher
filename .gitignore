@@ -1,0 +1,23 @@
+# Virtual environment & IDE
+.venv/
+.vscode/
+
+# Large/local folders - do not sync
+documentation/
+SourceFiles/
+logs/
+EDC16C39_Logs/
+MED961_Logs_Write/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Backup/bin files & archives
+*.bin
+*.bak
+*.tmp
+*.zip
+task_progress
