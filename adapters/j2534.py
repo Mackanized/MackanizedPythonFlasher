@@ -1,5 +1,6 @@
-﻿import ctypes
+import ctypes
 import platform
+import struct
 import winreg
 from typing import List, Dict, Optional, Tuple
 
@@ -57,15 +58,47 @@ class PASSTHRU_MSG(ctypes.Structure):
     ]
 
 
+# ── DLL bitness helper ────────────────────────────────────────────────
+def _get_dll_bitness(path: str) -> str:
+    """Return '64-bit', '32-bit', or 'unknown' by reading the PE header."""
+    try:
+        with open(path, 'rb') as f:
+            dos = f.read(64)
+            if dos[:2] != b'MZ':
+                return 'unknown'
+            pe_offset = struct.unpack_from('<I', dos, 60)[0]
+            f.seek(pe_offset)
+            pe = f.read(6)
+            if pe[:4] != b'PE\x00\x00':
+                return 'unknown'
+            machine = struct.unpack_from('<H', pe, 4)[0]
+            if machine == 0x8664:
+                return '64-bit'
+            if machine == 0x014C:
+                return '32-bit'
+            return 'unknown'
+    except Exception:
+        return 'unknown'
+
+
 # ── Device discovery ─────────────────────────────────────────────────
 def get_installed_j2534_devices() -> List[Dict[str, str]]:
+    """Search both 64-bit and 32-bit registry hives for installed J2534 drivers.
+    
+    On 64-bit Windows, 64-bit DLLs register under SOFTWARE\\PassThruSupport.04.04
+    and 32-bit DLLs under SOFTWARE\\WOW6432Node\\PassThruSupport.04.04.
+    We search both unconditionally, validate each DLL exists on disk,
+    and skip 32-bit DLLs when running 64-bit Python (WinError 193).
+    """
+    import os
     devices = []
-    is_64bit = platform.architecture()[0] == '64bit'
+    seen_dlls: set = set()
+    is_64bit_python = platform.architecture()[0] == '64bit'
 
-    if is_64bit:
-        reg_paths = [r"SOFTWARE\PassThruSupport.04.04"]
-    else:
-        reg_paths = [r"SOFTWARE\WOW6432Node\PassThruSupport.04.04"]
+    reg_paths = [
+        r"SOFTWARE\PassThruSupport.04.04",
+        r"SOFTWARE\WOW6432Node\PassThruSupport.04.04",
+    ]
 
     for reg_path in reg_paths:
         try:
@@ -77,7 +110,24 @@ def get_installed_j2534_devices() -> List[Dict[str, str]]:
                 try:
                     name, _ = winreg.QueryValueEx(device_key, "Name")
                     dll_path, _ = winreg.QueryValueEx(device_key, "FunctionLibrary")
-                    devices.append({"name": name, "dll": dll_path})
+                    dll_path_lower = dll_path.lower()
+                    if dll_path_lower in seen_dlls:
+                        continue  # avoid duplicates across hive paths
+                    if not os.path.isfile(dll_path):
+                        app_logger.debug(f"[J2534] DLL not found on disk, skipping: {dll_path}")
+                        continue
+                    # Skip 32-bit DLLs when running 64-bit Python — they cannot be loaded (WinError 193)
+                    bitness = _get_dll_bitness(dll_path)
+                    if is_64bit_python and bitness == '32-bit':
+                        app_logger.debug(
+                            f"[J2534] Skipping 32-bit DLL '{name}' ({dll_path}) — "
+                            f"incompatible with 64-bit Python. Install 64-bit drivers if available."
+                        )
+                        print(f"  [skip] {name}: 32-bit DLL, incompatible with 64-bit Python")
+                        continue
+                    seen_dlls.add(dll_path_lower)
+                    app_logger.debug(f"[J2534] Discovered device ({bitness}): '{name}' -> {dll_path} (from {reg_path})")
+                    devices.append({"name": name, "dll": dll_path, "bitness": bitness})
                 except FileNotFoundError:
                     continue
                 finally:
@@ -85,6 +135,9 @@ def get_installed_j2534_devices() -> List[Dict[str, str]]:
             winreg.CloseKey(key)
         except FileNotFoundError:
             continue
+
+    if not devices:
+        app_logger.debug("[J2534] No compatible J2534 devices found in registry.")
     return devices
 
 
@@ -110,6 +163,16 @@ class J2534Adapter(BaseAdapter):
             self._setup_prototypes()
             self.dll_path = dll_path
             return True
+        except OSError as e:
+            if getattr(e, 'winerror', None) == 193:
+                print(
+                    f"[J2534] Cannot load DLL: {dll_path}\n"
+                    f"  Reason: 32-bit DLL cannot be loaded by 64-bit Python (WinError 193).\n"
+                    f"  Install the 64-bit version of your J2534 device drivers."
+                )
+            else:
+                print(f"[J2534] Error loading DLL ({dll_path}): {e}")
+            return False
         except Exception as e:
             print(f"[J2534] Error loading DLL ({dll_path}): {e}")
             return False
@@ -119,14 +182,41 @@ class J2534Adapter(BaseAdapter):
         self.dll.PassThruOpen.restype = ctypes.c_long
         self.dll.PassThruClose.argtypes = [ctypes.c_ulong]
         self.dll.PassThruClose.restype = ctypes.c_long
-        self.dll.PassThruConnect.argtypes = [ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong)]
+        self.dll.PassThruConnect.argtypes = [
+            ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
+            ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong)
+        ]
         self.dll.PassThruConnect.restype = ctypes.c_long
         self.dll.PassThruDisconnect.argtypes = [ctypes.c_ulong]
         self.dll.PassThruDisconnect.restype = ctypes.c_long
+        # Fix: PassThruReadMsgs and PassThruWriteMsgs previously had only restype set.
+        # Missing argtypes causes silent 64-bit pointer/struct corruption on Windows x64.
+        self.dll.PassThruReadMsgs.argtypes = [
+            ctypes.c_ulong,                    # ChannelID
+            ctypes.POINTER(PASSTHRU_MSG),      # pMsg
+            ctypes.POINTER(ctypes.c_ulong),    # pNumMsgs
+            ctypes.c_ulong,                    # Timeout (ms)
+        ]
         self.dll.PassThruReadMsgs.restype = ctypes.c_long
+        self.dll.PassThruWriteMsgs.argtypes = [
+            ctypes.c_ulong,                    # ChannelID
+            ctypes.POINTER(PASSTHRU_MSG),      # pMsg
+            ctypes.POINTER(ctypes.c_ulong),    # pNumMsgs
+            ctypes.c_ulong,                    # Timeout (ms)
+        ]
         self.dll.PassThruWriteMsgs.restype = ctypes.c_long
+        self.dll.PassThruStartMsgFilter.argtypes = [
+            ctypes.c_ulong,                    # ChannelID
+            ctypes.c_ulong,                    # FilterType
+            ctypes.POINTER(PASSTHRU_MSG),      # pMaskMsg
+            ctypes.POINTER(PASSTHRU_MSG),      # pPatternMsg
+            ctypes.c_void_p,                   # pFlowControlMsg (NULL for raw CAN)
+            ctypes.POINTER(ctypes.c_ulong),    # pFilterID
+        ]
         self.dll.PassThruStartMsgFilter.restype = ctypes.c_long
-        self.dll.PassThruIoctl.argtypes = [ctypes.c_ulong, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p]
+        self.dll.PassThruIoctl.argtypes = [
+            ctypes.c_ulong, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p
+        ]
         self.dll.PassThruIoctl.restype = ctypes.c_long
 
     def connect(self, baudrate: int = 500000) -> bool:
@@ -180,16 +270,16 @@ class J2534Adapter(BaseAdapter):
         if res != STATUS_NOERROR:
             app_logger.debug(f"[J2534] IOCTL_SET_CONFIG (pins) failed: {res} (0x{res:02X}) — ignoring")
 
-        # Set up a pass-all filter for 11-bit CAN IDs
-        # Mask=0x7FF, Pattern=0x000 → accept all standard 11-bit IDs
+        # Set up a pass-all filter for CAN IDs
+        # Mask=0x00000000, Pattern=0x00000000 → (ID & 0) == (Pattern & 0) evaluates 0 == 0 (true for all IDs)
         mask_msg = PASSTHRU_MSG()
         ctypes.memset(ctypes.byref(mask_msg), 0, ctypes.sizeof(mask_msg))
         mask_msg.ProtocolID = self._protocol_id
         mask_msg.DataSize = 4
         mask_msg.Data[0] = 0x00
         mask_msg.Data[1] = 0x00
-        mask_msg.Data[2] = 0x07
-        mask_msg.Data[3] = 0xFF
+        mask_msg.Data[2] = 0x00
+        mask_msg.Data[3] = 0x00
 
         pattern_msg = PASSTHRU_MSG()
         ctypes.memset(ctypes.byref(pattern_msg), 0, ctypes.sizeof(pattern_msg))
@@ -299,6 +389,31 @@ class J2534Adapter(BaseAdapter):
                 msg.Data[3]
             )
             payload_len = msg.DataSize - 4
+
+            # Verbose debug: log every raw frame before filtering.
+            # This is essential for diagnosing CAN ID packing differences between
+            # J2534 driver implementations (Kvaser vs Scanmatik vs Tactrix).
+            app_logger.debug(
+                f"[J2534] RX raw: can_id=0x{rx_can_id:08X} "
+                f"RxStatus=0x{msg.RxStatus:08X} "
+                f"DataSize={msg.DataSize} "
+                f"Data={bytes(msg.Data[:max(msg.DataSize, 1)]).hex()}"
+            )
+
+            # J2534 spec §7.3.4: RxStatus bit 0x20 (TX_MSG_TYPE) means this is
+            # a TX echo / loopback — the adapter confirming it sent our own frame.
+            # SM2 USB (and most J2534 devices) populate this bit; Kvaser typically
+            # does not echo at all.  We must discard these echoes so they are never
+            # mistaken for ECU responses (which would cause enter_programming_mode
+            # and all PID reads to fail with "Unknown").
+            TX_MSG_TYPE = 0x20
+            if msg.RxStatus & TX_MSG_TYPE:
+                app_logger.debug(
+                    f"[J2534] TX echo discarded: can_id=0x{rx_can_id:03X} "
+                    f"RxStatus=0x{msg.RxStatus:08X}"
+                )
+                return 0, b""
+
             if payload_len <= 0:
                 return 0, b""
 
@@ -307,12 +422,14 @@ class J2534Adapter(BaseAdapter):
                 payload = bytes(msg.Data[4:4 + payload_len])
                 return rx_can_id, payload
 
+            # Frame received but CAN ID not in diagnostic set — log for diagnosis
+            app_logger.debug(
+                f"[J2534] RX filtered out: can_id=0x{rx_can_id:08X} not in DIAG_IDS. "
+                f"If this is a valid ECU response, the DIAG_IDS set or CAN ID decoding may need updating."
+            )
             return 0, b""
 
-        if res not in (STATUS_NOERROR, ERR_BUFFER_EMPTY, ERR_TIMEOUT):
-            app_logger.debug(f"[J2534] read_frame: res=0x{res:02X}, num_msgs={num_msgs.value}")
-
         if res not in (STATUS_NOERROR, ERR_BUFFER_EMPTY, ERR_TIMEOUT, ERR_FAILED):
-            app_logger.debug(f"[J2534] read_frame: unexpected error res=0x{res:02X}")
+            app_logger.debug(f"[J2534] read_frame: unexpected error res=0x{res:02X}, num_msgs={num_msgs.value}")
 
         return 0, b""

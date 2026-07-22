@@ -129,8 +129,17 @@ class MyNewECU(BaseECU):
 | Interface Adapter | Implementation | Status |
 | :--- | :--- | :---: |
 | **Kvaser** | Official Kvaser `canlib` SDK | ✅ **Tested & Working** |
-| **J2534 PassThru** | Tactrix OpenPort, Scanmatik, Mongoose, etc. | 🚧 **In Development** |
+| **J2534 PassThru** | Scanmatik (SM2/SM3), Kvaser J2534, Tactrix OpenPort, Mongoose, etc. | ✅ **Tested & Working** |
 | **STN Interfaces** | STN11xx / STN22xx / OBDLink | 📋 **In Planning** |
+
+> [!NOTE]
+> ### ⚠️ Important Note on 32-bit vs 64-bit Python for J2534
+> J2534 PassThru drivers are Windows Dynamic Link Libraries (`.dll`). Under Windows C ABI rules, a 64-bit Python executable can **only** load 64-bit DLLs, and a 32-bit Python executable can **only** load 32-bit DLLs.
+> 
+> - **32-bit Drivers**: Many popular J2534 hardware manufacturers (such as Scanmatik SM2/SM3, older Tactrix, and legacy Mongoose tools) only supply **32-bit DLL drivers** (`smj2534.dll`, etc.), which are registered under `SOFTWARE\WOW6432Node\PassThruSupport.04.04`.
+> - **64-bit Drivers**: Kvaser and select modern adapters provide native 64-bit J2534 DLLs under `SOFTWARE\PassThruSupport.04.04`.
+> 
+> **Recommendation**: If your J2534 device only provides 32-bit drivers, create your virtual environment using a **32-bit Python installation** (e.g. Python 3.10+ x86 32-bit). PythonFlasher automatically inspects DLL headers and will warn you if a driver's bitness is incompatible with your current Python environment (preventing `WinError 193` crashes).
 
 ---
 
@@ -139,6 +148,7 @@ class MyNewECU(BaseECU):
 - **Dual User Interfaces**:
   - **PyQt5 GUI** (`gui_main.py`): Sleek dark theme wizard interface with real-time CAN trace monitor and progress metrics.
   - **CLI** (`flasher_cli.py`): Fast, menu-driven terminal tool for field use and headless operation.
+- **Universal Hardware Support**: Direct support for Kvaser `canlib` hardware as well as any SAE J2534 PassThru compliant interface (Scanmatik SM2/SM3, Kvaser J2534, Tactrix OpenPort, etc.).
 - **OEM Diagnostic Read Capabilities**: Reads VIN, Hardware Type, Part Numbers, Software Versions, Diagnostic Data IDs, and BCD Programming Dates.
 - **ISO-TP Transport Engine**: Robust multi-frame ISO-TP transmission with flow control handling and configurable block sizes.
 - **Comprehensive Logging**:
@@ -154,10 +164,10 @@ class MyNewECU(BaseECU):
 Clone the repository and set up a Python virtual environment:
 
 ```powershell
-git clone https://github.com/MelvisR/PythonFlasher.git
-cd PythonFlasher
+git clone https://github.com/Mackanized/MackanizedPythonFlasher.git
+cd MackanizedPythonFlasher
 
-# Create and activate virtual environment
+# Create and activate virtual environment (use 32-bit Python if using 32-bit J2534 drivers)
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
@@ -181,8 +191,8 @@ pip install -r requirements.txt
 
 ## 🗺️ Future Roadmap
 
+- [x] Full J2534 PassThru driver implementation (Scanmatik, Kvaser, Tactrix).
 - [ ] Complete Bosch EDC16C39 in-car and bench flashing routines.
-- [ ] Finalize J2534 PassThru driver implementation.
 - [ ] Add STN interface support (STN11xx / STN22xx).
 - [ ] Implement automated checksum verification prior to flash write operations.
 - [ ] Cross-platform support (Linux SocketCAN driver).
