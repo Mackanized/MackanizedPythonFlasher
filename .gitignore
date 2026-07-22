@@ -21,3 +21,7 @@ build/
 *.tmp
 *.zip
 task_progress
+
+# Test scripts
+test_*.py
+test_*
