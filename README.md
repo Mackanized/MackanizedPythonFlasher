@@ -12,7 +12,7 @@ In the automotive tuning and repair community, reading and writing ECU firmware 
 
 **PythonFlasher** was built to provide a clean, modular, and open-source platform that:
 - Runs natively on modern Python environments (Python 3.10+).
-- Provides a clean separation between **Hardware Adapters**, **ISO-TP Transport Layers**, and **ECU Modules**.
+- Provides a clean architecture separating **Hardware Adapters**, **ISO-TP Transport Layers**, and **ECU Modules**.
 - Offers both an interactive **PyQt5 Desktop GUI** and a lightweight **Command Line Interface (CLI)**.
 - Features real-time CAN trace logging, automatic fallbacks, and OEM seed/key security algorithms.
 
@@ -20,18 +20,23 @@ In the automotive tuning and repair community, reading and writing ECU firmware 
 
 ## 🚦 Current Status
 
-| Feature / ECU | Hardware Status | Read | Write | Security Access |
-| :--- | :---: | :---: | :---: | :---: |
-| **Bosch ME9.6.1** *(Saab 9-3 2.8T V6 / Opel Vectra C)* | ✅ Tested | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 (16-bit) |
-| **Bosch ME9.6** *(Saab 9-3 / Opel 2.8T)* | ✅ Supported | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 (16-bit) |
-| **Bosch EDC16C39** *(Saab 9-3 1.9 TiD/TTiD, Opel 1.9/2.0 CDTI)* | 🚧 Active Dev | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 & Level 7 |
-| **Trionic 8 (T8)** *(Saab 9-3 2.0t / 2.0T B207)* | ✅ Supported | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 (16-bit) |
-| **Bosch EDC17C19** *(Opel / Vauxhall 2.0 CDTI)* | ⚙️ Experimental | ⚙️ Experimental | ⚙️ Planned | ⚙️ Planned |
+### ECU Support Matrix
 
-### Supported Hardware Adapters
-- **Kvaser** (via official Kvaser `canlib` SDK)
-- **J2534 PassThru** (compatible with Tactrix OpenPort 2.0, Scanmatik 2 Pro, Mongoose, DrewTech, and all standard J2534 DLLs)
-- **ELM327 / STN** *(Basic diagnostic support)*
+| ECU Module | Target Vehicle / Engine | Status | Read | Write | Security Access |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Bosch ME(D)9.6.1** | Saab 9-3 2.8T V6 / Opel Vectra C V6 | ✅ **Tested & Working** | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 (16-bit) |
+| **Bosch EDC16C39** | Saab 9-3 1.9 TiD/TTiD, Opel 1.9/2.0 CDTI | 🚧 **In Development** | 🚧 Full & Calib | 🚧 Calibration | 🚧 Level 1 & Level 7 |
+| **Bosch ME9.6** | Saab 9-3 / Opel 2.8T | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
+| **Trionic 8 (T8)** | Saab 9-3 2.0t / 2.0T B207 | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
+| **Bosch EDC17C19** | Opel / Vauxhall 2.0 CDTI | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
+
+### Hardware Adapter Status
+
+| Interface Adapter | Implementation | Status |
+| :--- | :--- | :---: |
+| **Kvaser** | Official Kvaser `canlib` SDK | ✅ **Tested & Working** |
+| **J2534 PassThru** | Tactrix OpenPort, Scanmatik, Mongoose, etc. | 🚧 **In Development** |
+| **STN Interfaces** | STN11xx / STN22xx / OBDLink | 📋 **In Planning** |
 
 ---
 
@@ -82,10 +87,11 @@ pip install -r requirements.txt
 
 ## 🗺️ Future Roadmap
 
-- [ ] **Bosch EDC16C39 Level 7 SecurityAccess**: Full integration of 32-bit Bosch seed-key algorithms for bench mode programming.
-- [ ] **EDC17 / MED17 UDS Flashing**: Extended UDS protocol routines for tricore-based ECUs.
-- [ ] **Automated Checksum Correction**: Built-in CRC / CCP checksum verification prior to flash write operations.
-- [ ] **Cross-Platform Support**: Linux SocketCAN driver implementation.
+- [ ] Complete Bosch EDC16C39 in-car and bench flashing routines.
+- [ ] Finalize J2534 PassThru driver implementation.
+- [ ] Add STN interface support (STN11xx / STN22xx).
+- [ ] Implement automated checksum verification prior to flash write operations.
+- [ ] Cross-platform support (Linux SocketCAN driver).
 
 ---
 
