@@ -2,7 +2,7 @@
 
 > **Modular GMLAN / UDS ECU Diagnostic & Flashing Tool**
 
-PythonFlasher is a modern, high-performance Python application and GUI designed for reading, writing, and diagnosing Engine Control Units (ECUs) used in **Saab, Opel/Vauxhall, GM, and Alfa Romeo** vehicles over CANbus (GMLAN / ISO 14229 / ISO 15765 / KWP2000).
+PythonFlasher is a modern, high-performance Python application and GUI designed for reading, writing, and diagnosing Engine Control Units (ECUs) used in **Saab, Opel/Vauxhall, GM, Alfa Romeo, and Holden** vehicles over CANbus (GMLAN / ISO 14229 / ISO 15765 / KWP2000).
 
 ---
 
@@ -39,13 +39,13 @@ In the automotive tuning and repair community, reading and writing ECU firmware 
 
 ### ECU Support Matrix
 
-| ECU Module | Target Vehicle / Engine | Status | Read | Write | Security Access |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Bosch ME(D)9.6.1** | Saab 9-3 2.8T V6 / Opel Vectra C V6 | ✅ **Tested & Working** | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 (16-bit) |
-| **Bosch EDC16C39** | Saab 9-3 1.9 TiD/TTiD, Opel 1.9/2.0 CDTI | 🚧 **In Development** | 🚧 Full & Calib | 🚧 Calibration | 🚧 Level 1 & Level 7 |
-| **Bosch ME9.6** | Saab 9-3 / Opel 2.8T | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
-| **Trionic 8 (T8)** | Saab 9-3 2.0t / 2.0T B207 | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
-| **Bosch EDC17C19** | Opel / Vauxhall 2.0 CDTI | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
+| ECU Module | GM Designation | Target Vehicles & Engines | Status | Read | Write | Security Access |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| **Bosch ME(D)9.6.1** | **GM E69** (MED9.6.1)<br>**GM E77** (ME9.6.1) | Saab 9-3 (2014), 9-4X (2011), 9-5 (2010–2011)<br>Opel/Vauxhall Insignia<br>GM North America & Holden Australia<br>*Engines: A20NHT, A28NER, A28NET, LP2, LAU* | ✅ **Tested & Working** | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 (16-bit) |
+| **Bosch EDC16C39** | Bosch EDC16 | Saab 9-3 1.9 TiD/TTiD, Opel 1.9/2.0 CDTI | 🚧 **In Development** | 🚧 Full & Calib | 🚧 Calibration | 🚧 Level 1 & Level 7 |
+| **Bosch ME9.6** | GM E69 | Saab 9-3 / Opel 2.8T V6 (2006–2009) | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
+| **Trionic 8 (T8)** | Saab T8 | Saab 9-3 2.0t / 2.0T (B207E/L/R) | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
+| **Bosch EDC17C19** | Bosch EDC17 | Opel / Vauxhall 2.0 CDTI | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
 
 ### Hardware Adapter Status
 
