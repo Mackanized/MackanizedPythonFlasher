@@ -23,15 +23,92 @@ PythonFlasher is free and open-source **Donationware**. If this project helps yo
 
 ---
 
-## 📌 Background
+## 📌 Background & Architecture
 
 In the automotive tuning and repair community, reading and writing ECU firmware often requires expensive proprietary hardware interfaces or legacy OEM software toolchains. 
 
-**PythonFlasher** was built to provide a clean, modular, and open-source platform that:
-- Runs natively on modern Python environments (Python 3.10+).
-- Provides a clean architecture separating **Hardware Adapters**, **ISO-TP Transport Layers**, and **ECU Modules**.
-- Offers both an interactive **PyQt5 Desktop GUI** and a lightweight **Command Line Interface (CLI)**.
-- Features real-time CAN trace logging, automatic fallbacks, and OEM seed/key security algorithms.
+**PythonFlasher** was built around **strict modularity**:
+- **Plug-and-Play ECU Modules**: New ECUs are implemented as standalone `.py` classes inheriting from `BaseECU`. Adding support for a new ECU simply requires dropping a new file into `ecus/`!
+- **Modular Hardware Adapters**: Universal interface layer for **Kvaser**, **J2534 PassThru**, and **STN**.
+- **Transport & Flashing Engine**: Core ISO-TP engine and session state manager decoupled from user interfaces.
+- **Dual UI Support**: Sleek **PyQt5 Desktop GUI** (`gui_main.py`) + **CLI Tool** (`flasher_cli.py`).
+
+---
+
+## 🧩 Adding a New ECU Module (Modularity Guide)
+
+PythonFlasher makes it easy for developers and tuners to add support for new ECUs. Every ECU module lives in `ecus/` and inherits from `BaseECU`.
+
+### **1. ECU Data & Property Requirements**
+
+To dock a new ECU module, create a new `.py` file in `ecus/` (e.g. `ecus/my_new_ecu.py`) and define the following properties and methods:
+
+```python
+from typing import Dict, List, Tuple
+from .base_ecu import BaseECU, Step
+
+class MyNewECU(BaseECU):
+    # ── 1. Metadata & Identifiers ────────────────────────────────────
+    NAME = "Bosch MyNewECU"          # Display name in GUI/CLI
+    CAN_ID_TX = 0x7E0                # Tester Request CAN ID
+    CAN_ID_RX = 0x7E8                # ECU Response CAN ID
+    SECURITY_LEVEL = 0x01            # SecurityAccess sub-function (0x01 = Level 1)
+    ADDR_LEN_IDENTIFIER = 0x00       # Service $23 format byte (0x00 or 0x23)
+
+    # ── 2. Seed-Key Transformation Steps ─────────────────────────────
+    # List of 3-byte transformation steps (op_byte, param0, param1)
+    SEED_KEY_STEPS = [
+        Step(0xF8, 0x1F, 0x80),
+        Step(0x05, 0x31, 0x6B),
+        Step(0x2A, 0x03, 0x4D),
+        Step(0x75, 0x68, 0x15),
+    ]
+
+    # ── 3. Flash Memory Layout & Block Sizes ─────────────────────────
+    TOTAL_FLASH_SIZE = 0x200000      # 2 MB total flash footprint
+    READ_HIGH_SPEED_CHUNK = 0xFA     # High-speed block size (250 bytes)
+    READ_FALLBACK_CHUNK = 0x02       # Fallback chunk size (2 bytes)
+    ERASE_SIZE = 0x180000            # Code erase block footprint
+    WRITE_BLOCK_SIZE = 4088          # Write payload chunk size
+    
+    # Optional unreadable/reserved memory gaps to skip automatically:
+    GAPS = [(0x1C0000, 0x1C2000)]
+
+    # ── 4. Required Implementation Methods ───────────────────────────
+    def get_flash_addresses(self) -> List[Tuple[int, int]]:
+        """Returns list of (start_address, length) tuples for full memory read."""
+        return [(0x000000, self.TOTAL_FLASH_SIZE)]
+
+    def get_flash_regions(self) -> Dict[str, Tuple[int, int, str]]:
+        """Named flash regions for reading: map name -> (start, end, default_filename)."""
+        return {
+            "calibration": (0x1C2000, 0x1F0000, "MyECU_Calibration.bin"),
+            "full": (0x000000, self.TOTAL_FLASH_SIZE, "MyECU_Full_Backup.bin"),
+        }
+
+    def get_write_regions(self) -> Dict[str, Tuple[int, int, str]]:
+        """Named flash regions for writing: map name -> (start, end, default_filename)."""
+        return {
+            "calibration": (0x1C2000, 0x1F0000, "MyECU_Calibration.bin"),
+        }
+
+    def get_info_pids(self) -> List[str]:
+        """PID keys to query during ECU Identification (VIN, Serial, OS, Calib)."""
+        return ["vin", "serial", "main_os", "calibration_set", "codefile_version"]
+
+    def get_verify_pids(self) -> Dict[str, Tuple[int, str]]:
+        """PIDs to verify calibration state after flash operations."""
+        return {
+            "engine_calib": (0xC2, "Engine Calibration"),
+        }
+```
+
+### **2. Registering the Module**
+1. Add the export to `ecus/__init__.py`:
+   ```python
+   from .my_new_ecu import MyNewECU
+   ```
+2. Add your ECU entry to the selection menu in `flasher_cli.py` and `gui/steps/step_ecu.py`.
 
 ---
 
