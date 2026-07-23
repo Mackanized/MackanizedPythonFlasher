@@ -34,6 +34,11 @@ class _Trionic5Base(BaseECU):
         supports_recovery=True,
         supports_checksum_validation=True,
         development_status="hardware-enabled-upstream-derived",
+        evidence_reference=(
+            "Trionic 5.2/5.5 native SRAM loader read/write ported from the pinned upstream "
+            "reference implementation (see firmware/trionic loader manifest); physical hardware "
+            "read and write enabled, gated by standard operator/voltage/checksum/readback preflight."
+        ),
     )
 
     def get_flash_addresses(self) -> List[AddressRange]:

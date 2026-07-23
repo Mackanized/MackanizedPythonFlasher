@@ -215,6 +215,26 @@ class Trionic8Client(GMLANClient):
             raise DiagnosticError("T8 stock-loader read response is malformed")
         return response[2:]
 
+    def _writable_range(self) -> tuple[int, int]:
+        """The single contiguous stock-writable span, derived from the ECU profile.
+
+        T8's application partitions (app-0..app-4) are declared as separate,
+        individually named entries but are contiguous with no gaps between
+        them; only the boundary below them (boot/nvdm/hwio) is protected. This
+        merges those entries and fails loudly if they are ever restructured to
+        leave an internal gap, instead of silently writing across it.
+        """
+        writable = sorted(self.ecu.PROFILE.writable_ranges, key=lambda r: r.start)
+        if not writable:
+            raise DiagnosticError("T8 profile declares no writable ranges")
+        for previous, current in zip(writable, writable[1:]):
+            if previous.end_exclusive != current.start:
+                raise DiagnosticError(
+                    "T8 managed programming expects the writable partitions to be contiguous; "
+                    f"found a gap between 0x{previous.end_exclusive:06X} and 0x{current.start:06X}"
+                )
+        return writable[0].start, writable[-1].end_exclusive
+
     def request_download(self, size: int) -> DownloadParameters:
         if self._state is not T8State.LOADER_ACTIVE or self._loader_purpose != "program":
             raise SessionError("T8 flash erase requires the programming SRAM loader")
@@ -222,7 +242,7 @@ class Trionic8Client(GMLANClient):
             raise DiagnosticError("T8 stock erase must target all application partitions")
         response = self._erase_application(self.tp)
         self._state = T8State.ERASED
-        self._download_next = 0x020000
+        self._download_next, _ = self._writable_range()
         return DownloadParameters(max_request_bytes=0xF0, raw_response=response)
 
     def _erase_application(self, transport: ISOTPTransport) -> bytes:
@@ -371,16 +391,22 @@ class Trionic8Client(GMLANClient):
         if not recovery.send_payload(b"\xA5\x03"):
             return False
         self._clock.sleep(0.10)
-        if not recovery.send_payload(b"\x27\x01"):
+        # Derived from SECURITY_POLICY rather than a hardcoded literal so this
+        # can't silently drift out of sync with the ECU definition's actual
+        # SecurityAccess level (see ecus/trionic8.py for why it's 0xFD).
+        policy = self.ecu.SECURITY_POLICY
+        request_level = policy.request_level
+        response_level = policy.request_level + 1
+        if not recovery.send_payload(bytes((0x27, request_level))):
             return False
         seed_response = self._receive_positive(recovery, 0x27, 0x67, 5.0)
-        if len(seed_response) != 4 or seed_response[1] != 0x01:
+        if len(seed_response) != 2 + policy.seed_length or seed_response[1] != request_level:
             raise DiagnosticError("T8 recovery seed response is malformed")
         key = self.ecu.calculate_key(int.from_bytes(seed_response[2:], "big"))
-        if not recovery.send_payload(b"\x27\x02" + key.to_bytes(2, "big")):
+        if not recovery.send_payload(bytes((0x27, response_level)) + key.to_bytes(policy.key_length, "big")):
             return False
         accepted = self._receive_positive(recovery, 0x27, 0x67, 5.0)
-        if accepted[:2] != b"\x67\x02":
+        if accepted[:2] != bytes((0x67, response_level)):
             return False
         self._recovery_tp = recovery
         self._state = T8State.RECOVERY_SESSION
@@ -417,13 +443,14 @@ class Trionic8Client(GMLANClient):
             raise DiagnosticError(f"T8 firmware structure rejected: {exc}") from exc
         if not checksum.valid:
             raise DiagnosticError(checksum.reason)
-        last_used = min(self.ecu.TOTAL_FLASH_SIZE, max(0x020000, t8_last_used_address(data)))
+        write_start, write_limit = self._writable_range()
+        last_used = min(write_limit, max(write_start, t8_last_used_address(data)))
         # BlockManager in the reference uses integer division and an inclusive
         # last-block loop. Preserve that boundary so the final used block is
         # completely programmed, including its bytes beyond the 0x200 margin.
         program_end = min(
-            self.ecu.TOTAL_FLASH_SIZE,
-            0x020000 + (((last_used - 0x020000) // 0xEA) + 1) * 0xEA,
+            write_limit,
+            write_start + (((last_used - write_start) // 0xEA) + 1) * 0xEA,
         )
         progress_callback(0.0, "Entering T8 programming session and uploading SRAM loader")
         self.prepare_programming_session()
@@ -436,27 +463,27 @@ class Trionic8Client(GMLANClient):
                     if item.writable_by_stock_flow
                 )
                 self.request_download(size)
-                address = 0x020000
+                address = write_start
                 total = max(1, program_end - address)
                 while address < program_end:
                     chunk = data[address:min(program_end, address + 0xEA)]
                     self.write_memory_block(address, chunk)
                     address += len(chunk)
-                    progress_callback(5.0 + 75.0 * (address - 0x020000) / total, f"T8 0x{address:06X}")
+                    progress_callback(5.0 + 75.0 * (address - write_start) / total, f"T8 0x{address:06X}")
                 self.finalize_transfer()
                 self.verify_flash_routine()
                 progress_callback(82.0, "Switching to T8 read loader for readback")
                 self.return_to_normal_mode()
                 self.prepare_read_session()
                 progress_callback(84.0, "Reading programmed T8 application back")
-                address = 0x020000
+                address = write_start
                 while address < program_end:
                     chunk = data[address:min(program_end, address + 0x80)]
                     actual = self.read_memory_by_address(address, len(chunk))
                     if actual != chunk:
                         raise DiagnosticError(f"T8 readback mismatch at 0x{address:06X}")
                     address += len(chunk)
-                    progress_callback(82.0 + 17.0 * (address - 0x020000) / total, f"T8 verify 0x{address:06X}")
+                    progress_callback(82.0 + 17.0 * (address - write_start) / total, f"T8 verify 0x{address:06X}")
                 self._state = T8State.VERIFIED
                 self.return_to_normal_mode()
             except Exception:

@@ -77,6 +77,12 @@ class Trionic7Client(ProtocolClient):
             return True
         if self._state is T7State.CONNECTED:
             raise SessionError("T7 SecurityAccess requires the proprietary KWP session")
+        # Matches the reference TrionicCANLib KWPHandler.requestSequrityAccess,
+        # which tries both key-candidate methods in sequence rather than
+        # requiring the variant to be known ahead of time. Unlike the
+        # reference (which ignores NRC codes entirely), a lockout-indicating
+        # negative response (0x36 exceeded attempts, 0x37 delay not expired)
+        # aborts immediately instead of feeding it a second live key attempt.
         last_error: Optional[Exception] = None
         for variant in (0, 1):
             try:
@@ -279,7 +285,12 @@ class Trionic7Client(ProtocolClient):
             try:
                 progress_callback(3.0, "Running T7 erase routines 0x52 and 0x53")
                 self._erase()
-                ranges = ((0x00000, 0x7B000), (0x7FE00, 0x80000))
+                # Derived from the ECU profile rather than hardcoded so the
+                # protected-gap partition can never silently drift out of sync
+                # with what actually gets written.
+                ranges = tuple((r.start, r.end_exclusive) for r in self.ecu.PROFILE.writable_ranges)
+                if not ranges:
+                    raise DiagnosticError("T7 profile declares no writable ranges")
                 total = sum(end - start for start, end in ranges)
                 written = 0
                 for start, end in ranges:

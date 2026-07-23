@@ -207,8 +207,8 @@ TRIONIC_PROFILES: Dict[TrionicGeneration, TrionicFlashProfile] = {
         response_ids=(0x7E8, 0x311),
         read_block_size=0x80,
         write_block_size=0x80,
-        security_seed_level=0x01,
-        security_key_level=0x02,
+        security_seed_level=0xFD,
+        security_key_level=0xFE,
         partitions=(
             TrionicPartition("boot", AddressRange(0x000000, 0x004000), False, "Critical boot partition"),
             TrionicPartition("nvdm-1", AddressRange(0x004000, 0x006000), False, "VIN/key data risk"),

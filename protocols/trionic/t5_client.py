@@ -274,6 +274,16 @@ class Trionic5Client(ProtocolClient):
         checksum = inspect_t5_checksum(data)
         if not checksum.valid:
             raise DiagnosticError(f"T5 programming checksum rejected: {checksum.reason}")
+        # Derived from the ECU profile rather than assuming the whole image is
+        # writable, so a future profile change can't silently drift out of
+        # sync with what actually gets written.
+        writable = self.ecu.PROFILE.writable_ranges
+        if len(writable) != 1:
+            raise DiagnosticError(
+                f"T5 managed programming expects exactly one contiguous writable range, "
+                f"found {len(writable)}"
+            )
+        write_start, write_end = writable[0].start, writable[0].end_exclusive
         progress_callback(0.0, "Uploading and starting verified T5 SRAM loader")
         self.prepare_programming_session()
         with self._cancel.defer_interrupts():
@@ -281,7 +291,7 @@ class Trionic5Client(ProtocolClient):
                 progress_callback(4.0, "Erasing complete T5 flash")
                 self.request_download(len(data))
                 nonblank = [
-                    address for address in range(0, len(data), 0x80)
+                    address for address in range(write_start, write_end, 0x80)
                     if any(value != 0xFF for value in data[address:address + 0x80])
                 ]
                 for index, address in enumerate(nonblank, 1):
@@ -293,8 +303,8 @@ class Trionic5Client(ProtocolClient):
                 progress_callback(82.0, "Running T5 loader checksum")
                 self.verify_flash_routine()
                 progress_callback(85.0, "Reading programmed T5 flash back")
-                for address in range(0, len(data), 0x80):
-                    expected = data[address:min(len(data), address + 0x80)]
+                for address in range(write_start, write_end, 0x80):
+                    expected = data[address:min(write_end, address + 0x80)]
                     actual = self.read_memory_by_address(address, len(expected))
                     if actual != expected:
                         raise DiagnosticError(f"T5 readback mismatch at 0x{address:06X}")

@@ -1,5 +1,6 @@
 """Hardware-enabled Trionic 7 ECU definition."""
 
+
 from typing import Dict, List, Tuple
 
 from domain.memory_map import AddressRange
@@ -41,6 +42,11 @@ class Trionic7(BaseECU):
         supports_recovery=True,
         supports_checksum_validation=True,
         development_status="hardware-enabled-upstream-derived",
+        evidence_reference=(
+            "Trionic 7 KWP2000 row-transport read/write ported from the pinned upstream "
+            "reference implementation (see firmware/trionic checksum port); physical hardware "
+            "read and write enabled, gated by standard operator/voltage/checksum/readback preflight."
+        ),
     )
 
     def get_flash_addresses(self) -> List[AddressRange]:

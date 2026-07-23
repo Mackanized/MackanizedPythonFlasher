@@ -6,9 +6,13 @@ from typing import Tuple
 def trionic7_candidate_keys(seed: int) -> Tuple[int, int]:
     """Return the two known T7 0x05/0x06 key candidates.
 
-    Selection must be driven by a verified ECU identity or replay trace.  The
-    caller must not try both automatically on hardware because repeated wrong
-    keys can trigger a lockout.
+    Trionic7Client.authenticate() tries both in sequence, matching the
+    reference TrionicCANLib (KWPHandler.requestSequrityAccess), which does
+    the same. Unlike the reference, which ignores negative-response codes
+    entirely, the caller must abort immediately on a lockout-indicating NRC
+    (0x36 exceeded attempts, 0x37 required time delay not expired) rather
+    than feed it a second live key attempt; only NRC 0x35 (invalid key)
+    justifies trying the other candidate.
     """
     if not 0 <= seed <= 0xFFFF:
         raise ValueError("T7 seed must fit in 16 bits")

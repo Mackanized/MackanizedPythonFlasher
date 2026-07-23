@@ -1,0 +1,8 @@
+# Trionic loader artifacts are integrity-checked by SHA-256 in
+# firmware/trionic/loaders.py against pinned values in manifest.json. Line
+# ending normalization (e.g. Windows core.autocrlf) silently changes their
+# bytes and breaks that check, so they must never be text-converted on
+# checkout — even the .s19 file, despite being ASCII, is a byte-exact pinned
+# artifact, not source text.
+firmware/trionic/loaders/*.s19 -text
+firmware/trionic/loaders/*.bin -text binary

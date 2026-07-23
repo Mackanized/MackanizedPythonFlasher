@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple
 from domain.memory_map import AddressRange
 from domain.protocol_metadata import ProtocolFamily, AddressingMode
 from domain.trionic import TrionicGeneration, get_trionic_profile
+from security.seed_key import SecurityAccessPolicy
 from .base_ecu import BaseECU, EcuCapabilities, Step
 
 
@@ -12,7 +13,13 @@ class Trionic8(BaseECU):
     CAN_ID_RX = 0x7E8
     PROTOCOL_FAMILY = ProtocolFamily.GMLAN
     ADDRESSING_MODE = AddressingMode.NORMAL_11_BIT
-    SECURITY_LEVEL = 0x01
+    # Matches TrionicCANLib's default `_securityLevel = AccessLevel.AccessLevelFD`
+    # (a user-configurable field in the reference; every call site there uses
+    # this default). BaseECU's SECURITY_LEVEL alone does not affect the wire
+    # byte here — Trionic8 uses SEED_KEY_STEPS for key calculation, and the
+    # actual 0x27 request byte comes from SECURITY_POLICY.request_level below.
+    SECURITY_LEVEL = 0xFD
+    SECURITY_POLICY = SecurityAccessPolicy(request_level=0xFD, response_level=0xFE)
     TOTAL_FLASH_SIZE = 0x100000
     FLASH_SIZE = TOTAL_FLASH_SIZE
     READ_HIGH_SPEED_CHUNK = 0x80
@@ -35,6 +42,11 @@ class Trionic8(BaseECU):
         supports_checksum_validation=True,
         supports_recovery=True,
         development_status="hardware-enabled-upstream-derived",
+        evidence_reference=(
+            "Trionic 8 GMLAN stock SRAM loader read/write ported from the pinned upstream "
+            "reference implementation (see firmware/trionic loader manifest); physical hardware "
+            "read and write enabled, gated by standard operator/voltage/checksum/readback preflight."
+        ),
     )
 
     SEED_KEY_STEPS = [
