@@ -1,5 +1,7 @@
-python-can>=4.3.0
-canlib>=1.22.0
+python-can>=4.6.1
+canlib>=1.33.358
 pyserial>=3.5
+PySide6>=6.11.1
+pywebview[qt]>=6.2.1
 
 #Kvaser drivers and SDK are required for Kvaser CAN interfaces. Please install the Kvaser drivers and SDK from https://www.kvaser.com/downloads/ before using this package with Kvaser hardware.    
