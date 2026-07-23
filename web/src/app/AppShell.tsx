@@ -50,9 +50,17 @@ export const AppShell: React.FC = () => {
       shortcut: 'Ctrl+O',
       safetyLevel: 'safe',
       action: async () => {
-        const res = await gateway.selectCalibrationFile();
-        if (res.isValid && res.path) {
-          globalOperationMachine.selectFile(res.path);
+        try {
+          const res = await gateway.selectCalibrationFile();
+          if (res.isValid && res.path) {
+            globalOperationMachine.selectFile(res.path);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unable to select a calibration file.';
+          setLogs((prev) => [
+            ...prev,
+            { time: new Date().toLocaleTimeString(), level: 'ERROR', msg: message },
+          ].slice(-1000));
         }
       },
     });
@@ -100,7 +108,7 @@ export const AppShell: React.FC = () => {
         e.preventDefault();
         setActiveTab('settings');
       } else if (e.key === 'Escape') {
-        void gateway.emergencyStop();
+        gateway.emergencyStop().catch((err) => console.error('[Emergency Stop] failed:', err));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -142,8 +150,16 @@ export const AppShell: React.FC = () => {
 
   const handleSelectEcu = async (ecuId: string) => {
     setActiveEcuId(ecuId);
-    const updatedInfo = await gateway.setSelectedEcu(ecuId);
-    setEcu(updatedInfo);
+    try {
+      const updatedInfo = await gateway.setSelectedEcu(ecuId);
+      setEcu(updatedInfo);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to select ECU.';
+      setLogs((prev) => [
+        ...prev,
+        { time: new Date().toLocaleTimeString(), level: 'ERROR', msg: message },
+      ].slice(-1000));
+    }
   };
 
   const handleConnected = (adapterInfo: AdapterInfo, ecuInfo: EcuIdentityInfo) => {

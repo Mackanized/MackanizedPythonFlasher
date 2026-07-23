@@ -48,12 +48,16 @@ export const ReadWorkspace: React.FC<ReadWorkspaceProps> = ({
       return;
     }
     setError('');
-    const startResult = await gateway.startFlashRead(selectedRegion);
-    if (!startResult.accepted) {
-      setError('Read start was rejected. Verify the connection and that no operation is active.');
-      return;
+    try {
+      const startResult = await gateway.startFlashRead(selectedRegion);
+      if (!startResult.accepted) {
+        setError('Read start was rejected. Verify the connection and that no operation is active.');
+        return;
+      }
+      setOperation(await gateway.getOperationStatus());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to start read.');
     }
-    setOperation(await gateway.getOperationStatus());
   };
 
   const isReading = Boolean(operation?.active && operation.operation === 'read');

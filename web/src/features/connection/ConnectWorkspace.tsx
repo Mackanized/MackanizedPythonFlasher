@@ -17,9 +17,10 @@ export const ConnectWorkspace: React.FC<ConnectWorkspaceProps> = ({ onConnected 
   useEffect(() => {
     let mounted = true;
     const loadAdapters = async () => {
+      const live = getPyWebViewGateway();
       const [adapterList, settings] = await Promise.all([
-        gateway.getAdapters(),
-        gateway.getSettings(),
+        live.getAdapters(),
+        live.getSettings(),
       ]);
       if (!mounted) return;
       setAdapters(adapterList);
@@ -29,11 +30,19 @@ export const ConnectWorkspace: React.FC<ConnectWorkspaceProps> = ({ onConnected 
       const fallback = adapterList.find((adapter) => adapter.isAvailable) ?? adapterList[0];
       setSelectedAdapterId(preferred?.id ?? fallback?.id ?? '');
     };
-    void loadAdapters().catch((err) => {
+    const reportError = (err: unknown) => {
       setErrorMsg(err instanceof Error ? err.message : 'Adapter discovery failed.');
-    });
+    };
+    void loadAdapters().catch(reportError);
+
+    // The desktop bridge lands asynchronously after this component may have
+    // already mounted and queried the browser-simulator gateway; reload once
+    // the real backend becomes available so the list reflects actual hardware.
+    const handleReady = () => void loadAdapters().catch(reportError);
+    window.addEventListener('pywebviewready', handleReady);
     return () => {
       mounted = false;
+      window.removeEventListener('pywebviewready', handleReady);
     };
   }, [gateway]);
 
@@ -51,7 +60,11 @@ export const ConnectWorkspace: React.FC<ConnectWorkspaceProps> = ({ onConnected 
       const adapter = adapters.find((a) => a.id === selectedAdapterId) || adapters[0];
       onConnected(adapter, ecuInfo);
     } catch (err: any) {
-      if (await gateway.isConnected()) await gateway.disconnectAdapter();
+      try {
+        if (await gateway.isConnected()) await gateway.disconnectAdapter();
+      } catch (cleanupErr) {
+        console.warn('[ConnectWorkspace] Cleanup disconnect failed:', cleanupErr);
+      }
       setErrorMsg(err.message || "Failed to establish controller connection.");
     } finally {
       setIsConnecting(false);

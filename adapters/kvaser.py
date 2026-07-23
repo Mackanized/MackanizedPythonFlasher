@@ -8,6 +8,7 @@ except ImportError:
     Frame = None
     HAS_KVASER = False
 from .base_adapter import BaseAdapter
+from domain.errors import ConfigurationError
 
 class KvaserAdapter(BaseAdapter):
     """Native Kvaser CANlib adapter interface with software-side diagnostic ID filtering."""
@@ -15,20 +16,39 @@ class KvaserAdapter(BaseAdapter):
     DIAG_IDS = {0x101, 0x7E0, 0x7E1, 0x7E2, 0x7E3, 0x7E4, 0x7E5, 0x7E6, 0x7E7, 0x7E8, 0x7E9, 0x7EA, 0x7EB, 0x7EC, 0x7ED, 0x7EE, 0x7EF}
 
     def __init__(self, channel: int = 0):
+        super().__init__()
         self.channel_num = channel
         self.channel = None
 
     def connect(self, baudrate: int = 500000) -> bool:
+        if not HAS_KVASER:
+            raise ConfigurationError(
+                "The Kvaser canlib SDK/package is not installed. "
+                "Install it with `pip install canlib` and the Kvaser driver package."
+            )
+        # Every fixed bitrate canlib's Bitrate enum exposes. 33333 (GMLAN
+        # single-wire low-speed) has no canlib preset, so it is intentionally
+        # absent here rather than silently connecting at the wrong speed.
+        bitrate_map = {
+            1000000: canlib.Bitrate.BITRATE_1M,
+            500000: canlib.Bitrate.BITRATE_500K,
+            250000: canlib.Bitrate.BITRATE_250K,
+            125000: canlib.Bitrate.BITRATE_125K,
+            100000: canlib.Bitrate.BITRATE_100K,
+            83333: canlib.Bitrate.BITRATE_83K,
+            62000: canlib.Bitrate.BITRATE_62K,
+            50000: canlib.Bitrate.BITRATE_50K,
+            10000: canlib.Bitrate.BITRATE_10K,
+        }
+        if baudrate not in bitrate_map:
+            raise ConfigurationError(
+                f"Kvaser canlib has no fixed bitrate preset for {baudrate} bps "
+                f"(supported: {', '.join(str(b) for b in sorted(bitrate_map))}). "
+                "GMLAN single-wire 33.3 kbps requires a different adapter (e.g. STN/OBDLink)."
+            )
         try:
-            bitrate_map = {
-                500000: canlib.Bitrate.BITRATE_500K,
-                250000: canlib.Bitrate.BITRATE_250K,
-                125000: canlib.Bitrate.BITRATE_125K,
-            }
-            k_bitrate = bitrate_map.get(baudrate, canlib.Bitrate.BITRATE_500K)
-
             self.channel = canlib.openChannel(self.channel_num, canlib.Open.ACCEPT_VIRTUAL)
-            self.channel.setBusParams(k_bitrate)
+            self.channel.setBusParams(bitrate_map[baudrate])
             self.channel.busOn()
             print(f"[Kvaser] Connected on Channel {self.channel_num} at {baudrate} bps.")
             return True
@@ -98,7 +118,7 @@ class KvaserAdapter(BaseAdapter):
     def check_bus_status(self):
         """Inspects Kvaser hardware bus flags for physical layer errors."""
         if not self.channel:
-            return
+            return False
         status = self.channel.readStatus()
         print(f"\n[Hardware Status Flags]: {status}")
         if status & canlib.Stat.BUS_OFF:
@@ -109,3 +129,4 @@ class KvaserAdapter(BaseAdapter):
             print("  [WARN] BUS-WARNING: High frame error count detected.")
         else:
             print("  [OK] Physical bus state is NORMAL.")
+        return True

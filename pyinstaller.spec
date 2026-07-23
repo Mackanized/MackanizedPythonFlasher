@@ -9,7 +9,7 @@ block_cipher = None
 
 added_files = [
     ('web/dist', 'web/dist'),
-]
+] + collect_data_files('firmware')
 
 hidden_imports = [
     'PySide6.QtCore',
@@ -17,10 +17,18 @@ hidden_imports = [
     'PySide6.QtWidgets',
     'webview',
     'serial',
-    'ecus',
-    'adapters',
-    'protocols',
-]
+    'serial.tools.list_ports',
+] + collect_submodules('ecus') + collect_submodules('adapters') + collect_submodules('protocols') + collect_submodules('infrastructure') + collect_submodules('application') + collect_submodules('domain')
+
+# canlib is optional (the [kvaser] extra) and imported inside a try/except in
+# adapters/kvaser.py, which PyInstaller's static analysis can miss. Only add
+# it when actually installed in the build venv, so a build without the
+# [kvaser] extra doesn't warn about a hidden import that can't be found.
+try:
+    import canlib  # noqa: F401
+    hidden_imports += collect_submodules('canlib')
+except ImportError:
+    pass
 
 a = Analysis(
     ['run_web.py'],

@@ -30,8 +30,12 @@ export default function DiagWorkspace({ isConnected, isSimulation }: DiagWorkspa
 
   const clearDtcs = async () => {
     setError('');
-    if (await gateway.clearDtcs()) setDtcs([]);
-    else setError('DTC clear is unavailable or was rejected.');
+    try {
+      if (await gateway.clearDtcs()) setDtcs([]);
+      else setError('DTC clear is unavailable or was rejected.');
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : 'DTC clear failed.');
+    }
   };
 
   return (

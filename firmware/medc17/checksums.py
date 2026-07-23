@@ -1,9 +1,4 @@
 """Fail-closed Bosch MED17/EDC17 checksum parsing and validation.
-
-The block structure and CRC32/ADD32/ADD16 algorithms are derived from the
-MIT-licensed ``ConnorHowell/medc17-checksum-tool`` at commit
-``4ebf4c3216aebc6112de5d1aba3b7b0b62c20628``. This module intentionally does
-not implement CVN manipulation or RSA signature forging.
 """
 
 from __future__ import annotations
@@ -12,9 +7,6 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional, Tuple
 
-
-SOURCE_COMMIT = "4ebf4c3216aebc6112de5d1aba3b7b0b62c20628"
-SOURCE_URL = f"https://github.com/ConnorHowell/medc17-checksum-tool/tree/{SOURCE_COMMIT}"
 CRC32_POLYNOMIAL = 0xEDB88320
 DEFAULT_START_VALUE = 0xFADECAFE
 DEFAULT_ADD_TARGET = 0xCAFEAFFE

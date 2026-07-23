@@ -19,16 +19,16 @@ class FlasherRuntime:
     def is_connected(self) -> bool:
         return self.adapter.is_connected()
 
-    def replace_adapter(self, adapter_key: str, dll_path: str = "") -> None:
-        replacement = self._factory.create(adapter_key, dll_path)
+    def replace_adapter(self, adapter_key: str, dll_path: str = "", port: str = "", interface: str = "") -> None:
+        replacement = self._factory.create(adapter_key, dll_path=dll_path, port=port, interface=interface)
         if self.adapter.is_connected():
             self.adapter.disconnect()
         self.adapter = replacement
         self.adapter_key = adapter_key.casefold().strip()
         self._configure_adapter()
 
-    def connect(self) -> bool:
-        return self.adapter.is_connected() or self.adapter.connect()
+    def connect(self, baudrate: int = 500000) -> bool:
+        return self.adapter.is_connected() or self.adapter.connect(baudrate=baudrate)
 
     def disconnect(self) -> None:
         self.adapter.disconnect()

@@ -167,23 +167,105 @@ cd PythonFlasher
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# Install dependencies
-pip install -r requirements.txt
+# Install the app and its dependencies (pyproject.toml is authoritative —
+# requirements.txt only lists driver-side extras, not the full app)
+pip install -e .
+
+# Optional: Kvaser CANlib support
+pip install -e ".[kvaser]"
+
+# Optional: everything needed to run the test suite
+pip install -e ".[dev]"
 ```
+
+Node.js 20+ is also required to build the web frontend (see below).
+
+Hardware adapters beyond the offline simulator need their own driver install
+first — these are native/vendor components that can't be bundled into the
+app itself:
+- **Kvaser**: install the official [Kvaser Drivers](https://www.kvaser.com/downloads/) package (kernel-mode driver; the `canlib` pip package is just a wrapper around it).
+- **J2534 PassThru**: install your adapter vendor's own driver (Tactrix, Mongoose, etc.) — the app discovers whatever is registered under `PassThruSupport.04.04` in the Windows registry.
+- **STN11xx / OBDLink**: no separate driver needed beyond the OS's own USB-serial driver; use Settings → *Scan ports* to find which COM port it enumerated on.
 
 ### 2. Launching the Application
 
-#### **Command Line Interface (CLI)**
+The application is a desktop suite: a React/Vite web UI running inside a
+PyWebView native window, backed by the Python flasher engine. **The web
+frontend must be built once before the app will start** (`run_web.py` serves
+the static bundle from `web/dist`, it does not run a dev server):
 
 ```powershell
-.venv\Scripts\python flasher_cli.py
+cd web
+npm install
+npm run build
+cd ..
+
+.venv\Scripts\python run_web.py
 ```
 
-#### **PyQt5 Graphical Interface (GUI)**
+Re-run `npm run build` after any change under `web/src/`; `run_web.py` only
+ever serves whatever is currently in `web/dist`, so a stale build silently
+keeps showing old behavior.
+
+For frontend-only UI iteration, `cd web && npm run dev` starts a Vite dev
+server with hot reload; it runs outside PyWebView so the Python bridge falls
+back to an in-browser mock/simulator gateway (`web/src/services/pywebview/bridge.ts`) — useful for layout/styling work, not for exercising real hardware.
+
+#### Legacy entry points
+
+Two older, PySide6-only interfaces predate the web suite and still exist but
+are not the primary way to run the app day-to-day:
 
 ```powershell
-.venv\Scripts\python gui_main.py
+.venv\Scripts\python flasher_cli.py   # CLI
+.venv\Scripts\python gui_main.py      # Native PySide6 window
 ```
+
+---
+
+## 🧪 Running Tests
+
+```powershell
+pip install -e ".[dev]"
+pytest
+```
+
+`pytest.ini_options` in `pyproject.toml` points at `tests/`. That suite is
+currently a bootstrap only (Qt offscreen-platform fixture in
+`tests/conftest.py`, no test modules yet) — running `pytest` will report
+zero tests collected rather than failures. For frontend type/lint checks:
+
+```powershell
+cd web
+npm run typecheck   # tsc --noEmit
+npm run lint        # oxlint
+```
+
+---
+
+## 📦 Building a Standalone Executable
+
+The PyInstaller spec (`pyinstaller.spec`) packages `run_web.py` plus the
+already-built `web/dist` bundle into a single windowed executable:
+
+```powershell
+cd web
+npm install
+npm run build
+cd ..
+
+pip install -e ".[dev]"
+pip install pyinstaller
+pyinstaller pyinstaller.spec
+```
+
+The output lands in `dist/PythonFlasher/` (or `dist/PythonFlasher.exe` for a
+one-file build, depending on the spec's `EXE` settings). Build with the
+`[kvaser]` extra installed in the same venv if you want Kvaser support baked
+into that specific build — `canlib`'s Python bindings get bundled
+automatically when present, but the machine running the resulting `.exe`
+still needs the Kvaser Drivers package installed separately (see above); no
+packaging step can embed that kernel-mode driver.
 
 ---
 

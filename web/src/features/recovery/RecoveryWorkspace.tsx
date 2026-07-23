@@ -33,14 +33,18 @@ export const RecoveryWorkspace: React.FC<RecoveryWorkspaceProps> = ({ ecu, volta
 
   const startRecovery = async () => {
     setMessage('');
-    const result = await gateway.startRecoveryFlash(true, backupVerified);
-    if (!result.accepted) {
-      setMessage('Recovery preparation was rejected. Verify T8 selection, ECU connection, voltage, backup confirmation, and active operation state.');
-      return;
+    try {
+      const result = await gateway.startRecoveryFlash(true, backupVerified);
+      if (!result.accepted) {
+        setMessage('Recovery preparation was rejected. Verify T8 selection, ECU connection, voltage, backup confirmation, and active operation state.');
+        return;
+      }
+      const status = await gateway.getOperationStatus();
+      setOperation(status);
+      setMessage(status.details || 'T8 recovery preparation started.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to start recovery.');
     }
-    const status = await gateway.getOperationStatus();
-    setOperation(status);
-    setMessage(status.details || 'T8 recovery preparation started.');
   };
 
   return (

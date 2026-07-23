@@ -95,8 +95,17 @@ export interface WorkstationSettingsPayload {
   densityMode: string;
   defaultAdapter: string;
   j2534Dll: string;
+  stnPort?: string;
+  socketcanInterface?: string;
   baudrate: number;
   disablePreflight: boolean;
+}
+
+export interface ScannedPort {
+  device: string;
+  description: string;
+  manufacturer: string;
+  likelyAdapter: boolean;
 }
 
 export interface PyWebViewGateway {
@@ -112,6 +121,7 @@ export interface PyWebViewGateway {
   getRecentFiles(): Promise<string[]>;
   getSettings(): Promise<WorkstationSettingsPayload>;
   updateSettings(settings: Partial<WorkstationSettingsPayload>): Promise<boolean>;
+  scanSerialPorts(): Promise<ScannedPort[]>;
   startFlashRead(region: string): Promise<OperationStartResult>;
   startFlashWrite(filePath: string, region: string, operatorConfirmed?: boolean, backupVerified?: boolean): Promise<OperationStartResult>;
   startRecoveryFlash(operatorConfirmed?: boolean, backupVerified?: boolean): Promise<OperationStartResult>;
@@ -273,6 +283,8 @@ class MockPyWebViewGateway implements PyWebViewGateway {
     densityMode: 'standard',
     defaultAdapter: 'mock',
     j2534Dll: '',
+    stnPort: 'COM3',
+    socketcanInterface: 'can0',
     baudrate: 500000,
     disablePreflight: true,
   };
@@ -284,6 +296,14 @@ class MockPyWebViewGateway implements PyWebViewGateway {
   async updateSettings(settings: Partial<WorkstationSettingsPayload>): Promise<boolean> {
     this.mockSettings = { ...this.mockSettings, ...settings };
     return true;
+  }
+
+  async scanSerialPorts(): Promise<ScannedPort[]> {
+    return [
+      { device: 'COM3', description: 'STN2120 OBDLink Adapter', manufacturer: 'SparkFun', likelyAdapter: true },
+      { device: 'COM5', description: 'USB Serial Device', manufacturer: 'FTDI', likelyAdapter: true },
+      { device: 'COM1', description: 'Communications Port', manufacturer: '(Standard port types)', likelyAdapter: false },
+    ];
   }
 
   async startFlashRead(region: string): Promise<OperationStartResult> {
@@ -409,6 +429,20 @@ class PyWebViewClientGateway implements PyWebViewGateway {
     this.api = api;
   }
 
+  /**
+   * Invoke a backend method whose caller needs to know WHY it failed (connect,
+   * identify, file pick, settings save, etc). Only falls back to a generic
+   * message when the method is genuinely absent from the bridge; otherwise the
+   * real backend error (with its real message) propagates to the caller
+   * instead of being swallowed into an unhelpful "backend unavailable" string.
+   */
+  private async invokeAction<T>(method: string, unavailableMessage: string, ...args: unknown[]): Promise<T> {
+    if (!this.api[method]) {
+      throw new Error(unavailableMessage);
+    }
+    return pyClient.invoke<T>(method, ...args);
+  }
+
   async getAdapters(): Promise<AdapterInfo[]> {
     try {
       if (this.api.getAdapters) return await pyClient.invoke<AdapterInfo[]>('getAdapters');
@@ -419,21 +453,11 @@ class PyWebViewClientGateway implements PyWebViewGateway {
   }
 
   async connectAdapter(adapterId: string): Promise<boolean> {
-    try {
-      if (this.api.connectAdapter) return await pyClient.invoke<boolean>('connectAdapter', adapterId);
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] connectAdapter error:', e);
-    }
-    return false;
+    return this.invokeAction<boolean>('connectAdapter', 'Unable to connect: backend unavailable.', adapterId);
   }
 
   async disconnectAdapter(): Promise<boolean> {
-    try {
-      if (this.api.disconnectAdapter) return await pyClient.invoke<boolean>('disconnectAdapter');
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] disconnectAdapter error:', e);
-    }
-    return false;
+    return this.invokeAction<boolean>('disconnectAdapter', 'Unable to disconnect: backend unavailable.');
   }
 
   async isConnected(): Promise<boolean> {
@@ -468,30 +492,19 @@ class PyWebViewClientGateway implements PyWebViewGateway {
   }
 
   async setSelectedEcu(ecuId: string): Promise<EcuIdentityInfo> {
-    try {
-      if (this.api.setSelectedEcu) return await pyClient.invoke<EcuIdentityInfo>('setSelectedEcu', ecuId);
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] setSelectedEcu error:', e);
-    }
-    throw new Error('Unable to select ECU: backend unavailable.');
+    return this.invokeAction<EcuIdentityInfo>('setSelectedEcu', 'Unable to select ECU: backend unavailable.', ecuId);
   }
 
   async readEcuInfo(): Promise<EcuIdentityInfo> {
-    try {
-      if (this.api.readEcuInfo) return await pyClient.invoke<EcuIdentityInfo>('readEcuInfo');
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] readEcuInfo error:', e);
-    }
-    throw new Error('Unable to identify ECU: backend unavailable.');
+    return this.invokeAction<EcuIdentityInfo>('readEcuInfo', 'Unable to identify ECU: backend unavailable.');
   }
 
   async selectCalibrationFile(region = 'full'): Promise<SelectedFilePayload> {
-    try {
-      if (this.api.selectCalibrationFile) return await pyClient.invoke<SelectedFilePayload>('selectCalibrationFile', region);
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] selectCalibrationFile error:', e);
-    }
-    return { path: '', filename: '', sizeBytes: 0, isValid: false };
+    return this.invokeAction<SelectedFilePayload>(
+      'selectCalibrationFile',
+      'Unable to open the file dialog: backend unavailable.',
+      region,
+    );
   }
 
   async getRecentFiles(): Promise<string[]> {
@@ -513,43 +526,31 @@ class PyWebViewClientGateway implements PyWebViewGateway {
   }
 
   async updateSettings(settings: Partial<WorkstationSettingsPayload>): Promise<boolean> {
-    try {
-      if (this.api.updateSettings) return await pyClient.invoke<boolean>('updateSettings', settings);
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] updateSettings error:', e);
-    }
-    return false;
+    return this.invokeAction<boolean>('updateSettings', 'Unable to save settings: backend unavailable.', settings);
+  }
+
+  async scanSerialPorts(): Promise<ScannedPort[]> {
+    return this.invokeAction<ScannedPort[]>('scanSerialPorts', 'Unable to scan serial ports: backend unavailable.');
   }
 
   async startFlashRead(region: string): Promise<OperationStartResult> {
-    try {
-      if (this.api.startFlashRead) return await pyClient.invoke<OperationStartResult>('startFlashRead', region);
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] startFlashRead error:', e);
-    }
-    return { accepted: false, operationId: '' };
+    return this.invokeAction<OperationStartResult>('startFlashRead', 'Unable to start read: backend unavailable.', region);
   }
 
   async startFlashWrite(filePath: string, region: string, operatorConfirmed = false, backupVerified = false): Promise<OperationStartResult> {
-    try {
-      if (this.api.startFlashWrite) {
-        return await pyClient.invoke<OperationStartResult>('startFlashWrite', filePath, region, operatorConfirmed, backupVerified);
-      }
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] startFlashWrite error:', e);
-    }
-    return { accepted: false, operationId: '' };
+    return this.invokeAction<OperationStartResult>(
+      'startFlashWrite',
+      'Unable to start write: backend unavailable.',
+      filePath, region, operatorConfirmed, backupVerified,
+    );
   }
 
   async startRecoveryFlash(operatorConfirmed = false, backupVerified = false): Promise<OperationStartResult> {
-    try {
-      if (this.api.startRecoveryFlash) {
-        return await pyClient.invoke<OperationStartResult>('startRecoveryFlash', operatorConfirmed, backupVerified);
-      }
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] startRecoveryFlash error:', e);
-    }
-    return { accepted: false, operationId: '' };
+    return this.invokeAction<OperationStartResult>(
+      'startRecoveryFlash',
+      'Unable to start recovery: backend unavailable.',
+      operatorConfirmed, backupVerified,
+    );
   }
 
   async getOperationStatus(): Promise<OperationStatus> {
@@ -566,30 +567,15 @@ class PyWebViewClientGateway implements PyWebViewGateway {
   }
 
   async emergencyStop(): Promise<boolean> {
-    try {
-      if (this.api.emergencyStop) return await pyClient.invoke<boolean>('emergencyStop');
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] emergencyStop error:', e);
-    }
-    return false;
+    return this.invokeAction<boolean>('emergencyStop', 'Unable to send emergency stop: backend unavailable.');
   }
 
   async readDtcs(): Promise<DtcItem[]> {
-    try {
-      if (this.api.readDtcs) return await pyClient.invoke<DtcItem[]>('readDtcs');
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] readDtcs error:', e);
-    }
-    return [];
+    return this.invokeAction<DtcItem[]>('readDtcs', 'Unable to read DTCs: backend unavailable.');
   }
 
   async clearDtcs(): Promise<boolean> {
-    try {
-      if (this.api.clearDtcs) return await pyClient.invoke<boolean>('clearDtcs');
-    } catch (e) {
-      console.warn('[PyWebView Gateway Warning] clearDtcs error:', e);
-    }
-    return false;
+    return this.invokeAction<boolean>('clearDtcs', 'Unable to clear DTCs: backend unavailable.');
   }
 
   subscribeTelemetry(callback: (data: TelemetryPayload) => void): () => void {
@@ -616,14 +602,37 @@ class PyWebViewClientGateway implements PyWebViewGateway {
 }
 
 let gatewayInstance: PyWebViewGateway | null = null;
+let upgradeListenerAttached = false;
 
 // Factory returns one long-lived gateway so simulator timers are not duplicated.
+//
+// PyWebView only injects `window.pywebview.api` after its native host fires
+// `NavigationCompleted` on the page that has ALREADY loaded and run this module,
+// so on first call in the desktop app the bridge is reliably still absent.
+// Falling back to the mock here is correct, but the choice must not be
+// permanent: once `pywebviewready` fires we swap the live singleton for the
+// real bridge so callers who fetch a fresh gateway on their next render (e.g.
+// React components re-invoking this factory on re-render) pick up the desktop
+// backend instead of being stuck on the browser simulator for the session.
 export function getPyWebViewGateway(): PyWebViewGateway {
-  if (gatewayInstance) return gatewayInstance;
+  if (gatewayInstance && !(gatewayInstance instanceof MockPyWebViewGateway)) return gatewayInstance;
+
   if (typeof window !== 'undefined' && (window as any).pywebview?.api) {
     gatewayInstance = new PyWebViewClientGateway((window as any).pywebview.api);
-  } else {
-    gatewayInstance = new MockPyWebViewGateway();
+    return gatewayInstance;
   }
+
+  if (gatewayInstance) return gatewayInstance;
+  gatewayInstance = new MockPyWebViewGateway();
+
+  if (typeof window !== 'undefined' && !upgradeListenerAttached) {
+    upgradeListenerAttached = true;
+    window.addEventListener('pywebviewready', () => {
+      if ((window as any).pywebview?.api) {
+        gatewayInstance = new PyWebViewClientGateway((window as any).pywebview.api);
+      }
+    }, { once: true });
+  }
+
   return gatewayInstance;
 }

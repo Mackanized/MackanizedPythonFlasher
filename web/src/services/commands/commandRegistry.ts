@@ -11,7 +11,7 @@ export interface DesktopCommand {
   category: 'File' | 'ECU' | 'Diagnostics' | 'View' | 'Settings';
   shortcut?: string;
   safetyLevel: 'safe' | 'dangerous' | 'critical';
-  action: () => void;
+  action: () => void | Promise<unknown>;
 }
 
 class CommandRegistry {
@@ -42,9 +42,17 @@ class CommandRegistry {
 
   execute(id: string): void {
     const cmd = this.commands.get(id);
-    if (cmd) {
-      console.log(`[Command Registry] Executing command: ${id}`);
-      cmd.action();
+    if (!cmd) return;
+    console.log(`[Command Registry] Executing command: ${id}`);
+    try {
+      const result = cmd.action();
+      if (result instanceof Promise) {
+        result.catch((err) => {
+          console.error(`[Command Registry] Command '${id}' failed:`, err);
+        });
+      }
+    } catch (err) {
+      console.error(`[Command Registry] Command '${id}' failed:`, err);
     }
   }
 }

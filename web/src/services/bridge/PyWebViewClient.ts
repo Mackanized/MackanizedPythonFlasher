@@ -13,7 +13,23 @@ export class PyWebViewClient {
    * Invoke a named method exposed by Python API on window.pywebview.api
    */
   public async invoke<T = unknown>(methodName: string, ...args: unknown[]): Promise<T> {
-    const pyApi = this.getPyApi();
+    let pyApi = this.getPyApi();
+
+    if (!pyApi && typeof window !== 'undefined' && ('pywebview' in window || (window as any).pywebview)) {
+      await new Promise<void>((resolve) => {
+        if ((window as any).pywebview?.api) return resolve();
+        const handler = () => {
+          window.removeEventListener('pywebviewready', handler);
+          resolve();
+        };
+        window.addEventListener('pywebviewready', handler);
+        setTimeout(() => {
+          window.removeEventListener('pywebviewready', handler);
+          resolve();
+        }, 2500);
+      });
+      pyApi = this.getPyApi();
+    }
 
     if (!pyApi || typeof pyApi[methodName] !== 'function') {
       // In development mode without PyWebView window, use mock response provider
@@ -188,6 +204,12 @@ export class PyWebViewClient {
 
       case 'select_file_native':
         return { selected: true, file_path: '/firmware/ME961_Stage1_v2.bin' } as unknown as T;
+
+      case 'scanSerialPorts':
+        return [
+          { device: 'COM3', description: 'STN2120 OBDLink Adapter', manufacturer: 'SparkFun', likelyAdapter: true },
+          { device: 'COM1', description: 'Communications Port', manufacturer: '(Standard port types)', likelyAdapter: false },
+        ] as unknown as T;
 
       default:
         return { success: true } as unknown as T;

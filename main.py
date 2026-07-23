@@ -14,6 +14,8 @@ def main():
     if not adapter.connect(baudrate=500000):
         return
 
+    channel_lease = adapter.exclusive_channel()
+    channel_lease.__enter__()
     try:
         # Check physical bus status
         adapter.check_bus_status()
@@ -35,6 +37,7 @@ def main():
             adapter.check_bus_status()
 
     finally:
+        channel_lease.__exit__(None, None, None)
         adapter.disconnect()
 
 if __name__ == "__main__":

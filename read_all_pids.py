@@ -83,6 +83,8 @@ def main():
         print("Failed to connect adapter.")
         return
 
+    channel_lease = adapter.exclusive_channel()
+    channel_lease.__enter__()
     adapter.check_bus_status()
     while adapter.read_frame(timeout_ms=10)[1]:
         pass
@@ -96,6 +98,7 @@ def main():
     print("Entering programming session...")
     if not gmlan.enter_programming_mode():
         print("Failed to enter programming session.")
+        channel_lease.__exit__(None, None, None)
         adapter.disconnect()
         return
 
@@ -110,6 +113,7 @@ def main():
 
     print("-" * 70)
     gmlan.return_to_normal_mode()
+    channel_lease.__exit__(None, None, None)
     adapter.disconnect()
     print("\nDone.")
 

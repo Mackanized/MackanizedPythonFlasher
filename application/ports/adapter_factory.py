@@ -6,4 +6,10 @@ from adapters.base_adapter import BaseAdapter
 
 
 class AdapterFactory(Protocol):
-    def create(self, adapter_key: str, dll_path: str = "") -> BaseAdapter: ...
+    def create(
+        self,
+        adapter_key: str,
+        dll_path: str = "",
+        port: str = "",
+        interface: str = "",
+    ) -> BaseAdapter: ...

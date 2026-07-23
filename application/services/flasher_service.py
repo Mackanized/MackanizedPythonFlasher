@@ -14,6 +14,7 @@ from ecus.base_ecu import BaseECU
 from flasher import ECUFlasher
 from application.validation.programming_preflight import ProgrammingRequest, VoltageEvidence
 from domain.clock import Clock, SystemClock
+from domain.errors import PythonFlasherError
 
 
 class FlasherService(QObject):
@@ -48,6 +49,7 @@ class FlasherService(QObject):
         self._pending_completion = None
         self._status_lock = threading.RLock()
         self._operation_status: Dict[str, Any] = self._idle_status()
+        self._last_adapter_error: Optional[str] = None
 
     @property
     def adapter(self) -> BaseAdapter:
@@ -73,6 +75,17 @@ class FlasherService(QObject):
     def operation_active(self) -> bool:
         return self._operation_is_active()
 
+    @property
+    def last_adapter_error(self) -> Optional[str]:
+        """Detail behind the most recent set_adapter/connect_adapter failure.
+
+        FlasherService's own methods only return bool (the Qt view model reads
+        errors off the ApplicationState log signal instead), which drops the
+        real exception text. Bridge-style callers that need to explain a
+        failure to a human read it from here.
+        """
+        return self._last_adapter_error
+
     # Compatibility aliases for older in-process integrations. New code must
     # use the public adapter/ECU properties and factory injection.
     @property
@@ -91,30 +104,47 @@ class FlasherService(QObject):
     def _active_adapter_key(self, key: str) -> None:
         self._runtime.adapter_key = key
 
-    def set_adapter(self, adapter_key: str, dll_path: str = "") -> bool:
+    def set_adapter(
+        self,
+        adapter_key: str,
+        dll_path: str = "",
+        port: str = "",
+        interface: str = "",
+    ) -> bool:
         if self._operation_is_active():
             self._state.log_error("Hardware", "Cannot replace adapter during an active operation.")
             return False
         try:
             adapter_key = adapter_key.lower().strip()
-            self._runtime.replace_adapter(adapter_key, dll_path)
+            self._runtime.replace_adapter(adapter_key, dll_path=dll_path, port=port, interface=interface)
             self._state.set_adapter_state(adapter_key.upper(), False)
+            self._last_adapter_error = None
             return True
-        except (ValueError, OSError, RuntimeError) as e:
-            self._state.log_error("Hardware", f"Failed to instantiate adapter {adapter_key}: {str(e)}")
+        except (ValueError, OSError, RuntimeError, PythonFlasherError) as e:
+            message = f"Failed to instantiate adapter {adapter_key}: {str(e)}"
+            self._state.log_error("Hardware", message)
+            self._last_adapter_error = message
             return False
 
-    def connect_adapter(self) -> bool:
+    def connect_adapter(self, baudrate: int = 500000) -> bool:
         if self._operation_is_active():
-            self._state.log_error("Hardware", "Cannot connect adapter during an active operation.")
+            message = "Cannot connect adapter during an active operation."
+            self._state.log_error("Hardware", message)
+            self._last_adapter_error = message
             return False
         try:
-            res = self._runtime.connect()
+            res = self._runtime.connect(baudrate=baudrate)
             self._state.set_adapter_state(self.adapter_key.upper(), res)
+            if res:
+                self._last_adapter_error = None
+            else:
+                self._last_adapter_error = f"{self.adapter_key.upper()} adapter reported a failed connection."
             return res
-        except (OSError, RuntimeError) as e:
-            self._state.log_error("Hardware", f"Connection exception: {str(e)}")
+        except (OSError, RuntimeError, PythonFlasherError) as e:
+            message = f"Connection exception: {str(e)}"
+            self._state.log_error("Hardware", message)
             self._state.set_adapter_state(self._state.adapter_name, False)
+            self._last_adapter_error = message
             return False
 
     def disconnect_adapter(self) -> bool:
@@ -123,8 +153,9 @@ class FlasherService(QObject):
             return False
         try:
             self._runtime.disconnect()
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError, PythonFlasherError) as exc:
             self._state.log_error("Hardware", f"Disconnect failed: {exc}")
+            self._last_adapter_error = f"Disconnect failed: {exc}"
             return False
         self._state.set_adapter_state(self.adapter_key.upper(), False)
         return True
@@ -143,10 +174,11 @@ class FlasherService(QObject):
             raise RuntimeError("Connect to the ECU before reading identification.")
         if self._operation_is_active():
             raise RuntimeError("Cannot identify ECU while another operation is active.")
-        flasher = ECUFlasher(self.adapter, self.ecu)
-        if not flasher.connect():
-            raise RuntimeError("Connected adapter became unavailable.")
-        return flasher.read_ecu_info()
+        with self.adapter.exclusive_channel():
+            flasher = ECUFlasher(self.adapter, self.ecu)
+            if not flasher.connect():
+                raise RuntimeError("Connected adapter became unavailable.")
+            return flasher.read_ecu_info()
 
     def start_read_operation(self, region_name: str = "full") -> bool:
         if not self._can_start_operation("read"):

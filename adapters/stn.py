@@ -70,11 +70,21 @@ class STNAdapter(BaseAdapter):
                     except Exception as e:
                         app_logger.warning(f"[STN] High-speed baud rate switch failed, using {self.initial_baud}: {e}")
 
-                # Configure CAN protocol mode (STP 6 = CAN 11/500k, STP 33 = GMLAN SW-CAN)
+                # Configure CAN protocol mode. Only these two exact rates are wired to a
+                # real fixed STN protocol number (STP 33 = GMLAN SW-CAN, STP 6 = ISO
+                # 15765-4 CAN 11/500k); anything else used to silently fall through to
+                # STP 6 regardless of the requested rate, so reject it instead.
                 if baudrate == 33333:
                     self._send_command("STP 33")  # GMLAN SW-CAN
-                else:
+                elif baudrate == 500000:
                     self._send_command("STP 6")   # ISO 15765-4 CAN 11/500k
+                else:
+                    self.disconnect()
+                    raise ConfigurationError(
+                        f"STN/OBDLink in this build only has fixed CAN protocols for 500000 bps "
+                        f"(STP 6) and 33333 bps GMLAN SW-CAN (STP 33); {baudrate} bps has no "
+                        "protocol number wired up."
+                    )
 
                 self._connected = True
                 app_logger.info(f"[STN] Connected to {self.port} at {baudrate} CAN baud.")

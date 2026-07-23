@@ -9,6 +9,8 @@ from .base_adapter import BaseAdapter
 from domain.errors import AdapterDisconnectedError, AdapterError, AdapterOpenError, ConfigurationError
 from logger import app_logger
 
+HAS_SOCKETCAN = hasattr(socket, "AF_CAN")
+
 
 class SocketCANAdapter(BaseAdapter):
     """Native Linux SocketCAN adapter interface with CAN-FD buffer sizing."""

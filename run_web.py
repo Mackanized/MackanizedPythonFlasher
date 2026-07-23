@@ -27,6 +27,8 @@ from infrastructure.telemetry import TelemetryEngine
 from adapters.mock_adapter import MockAdapter
 from adapters.j2534 import get_installed_j2534_devices
 from adapters.kvaser import HAS_KVASER
+from adapters.stn import HAS_SERIAL
+from adapters.socketcan import HAS_SOCKETCAN
 from logger import configure_logging
 
 PORT = 8080
@@ -48,15 +50,53 @@ class PythonApiBridge:
             {"id": "mock", "name": "MockAdapter (Offline Simulator)", "type": "mock", "isAvailable": True},
             {"id": "kvaser", "name": "Kvaser CAN (CANlib API)", "type": "kvaser", "isAvailable": HAS_KVASER},
             {"id": "j2534", "name": "J2534 PassThru (DLL)", "type": "j2534", "isAvailable": bool(get_installed_j2534_devices())},
+            {"id": "stn", "name": "STN11xx / OBDLink (Serial)", "type": "stn", "isAvailable": HAS_SERIAL},
+            {"id": "socketcan", "name": "SocketCAN (Linux Native)", "type": "socketcan", "isAvailable": HAS_SOCKETCAN},
+            {"id": "replay", "name": "Trace Replay Adapter", "type": "replay", "isAvailable": True},
         ]
+
+    def scanSerialPorts(self) -> List[Dict[str, Any]]:
+        """Enumerate serial ports so an STN/OBDLink adapter can be found without
+        the operator having to already know which COM port it enumerated on.
+
+        This only reads the OS device list (safe, non-invasive); it does not
+        open any port, so it will not disturb hardware already in use.
+        """
+        try:
+            from serial.tools import list_ports
+        except ImportError as e:
+            raise RuntimeError(
+                "pyserial is required for port scanning. Install with `pip install pyserial`."
+            ) from e
+
+        known_adapter_hints = ("stn", "obdlink", "elm", "ftdi", "ch340", "cp210", "usb serial")
+        ports = []
+        for info in list_ports.comports():
+            haystack = " ".join(
+                str(part) for part in (info.description, info.manufacturer, info.product) if part
+            ).lower()
+            ports.append({
+                "device": info.device,
+                "description": info.description or "",
+                "manufacturer": info.manufacturer or "",
+                "likelyAdapter": any(hint in haystack for hint in known_adapter_hints),
+            })
+        ports.sort(key=lambda p: (not p["likelyAdapter"], p["device"]))
+        return ports
 
     def connectAdapter(self, adapter_id: str) -> bool:
         print(f"[Backend API] Connecting adapter: {adapter_id}")
-        if not self._flasher.set_adapter(adapter_id, self._settings.j2534_dll_path):
-            return False
-        res = self._flasher.connect_adapter()
-        if res:
-            self._settings.default_adapter_key = adapter_id
+        if not self._flasher.set_adapter(
+            adapter_id,
+            dll_path=self._settings.j2534_dll_path,
+            port=self._settings.stn_port,
+            interface=self._settings.socketcan_interface,
+        ):
+            raise RuntimeError(self._flasher.last_adapter_error or f"Unable to initialize adapter '{adapter_id}'.")
+        res = self._flasher.connect_adapter(baudrate=self._settings.baudrate)
+        if not res:
+            raise RuntimeError(self._flasher.last_adapter_error or f"Adapter '{adapter_id}' failed to connect.")
+        self._settings.default_adapter_key = adapter_id
         return res
 
     def disconnectAdapter(self) -> bool:
@@ -142,58 +182,47 @@ class PythonApiBridge:
         }
 
     def selectCalibrationFile(self, region: str = "calibration") -> Dict[str, Any]:
-        """Open native desktop file dialog using PyWebView native host."""
+        """Open a native desktop file dialog using the PyWebView native host.
+
+        Returns isValid=False (no path substituted) when the operator cancels
+        the dialog. Earlier this silently generated and returned a fabricated
+        sample .bin in place of a cancelled/failed pick, which meant a cancel
+        looked identical to a real file selection to the caller.
+        """
+        is_dll_pick = region == "dll"
+        file_types = (
+            ("Dynamic Link Library (*.dll)", "All Files (*.*)")
+            if is_dll_pick
+            else ("Raw Binary Files (*.bin)", "All Files (*.*)")
+        )
         try:
             import webview
-            if len(webview.windows) > 0:
-                window = webview.windows[0]
-                dialog_type = getattr(getattr(webview, 'FileDialog', None), 'OPEN', getattr(webview, 'OPEN_DIALOG', 10))
-                result = window.create_file_dialog(
-                    dialog_type,
-                    file_types=('Raw Binary Files (*.bin)', 'All Files (*.*)')
-                )
-                if result and len(result) > 0:
-                    path = result[0]
-                    self._settings.add_recent_file(path)
-                    filename = os.path.basename(path)
-                    file_size = os.path.getsize(path)
-                    suggested = self._flasher.ecu.suggest_region_for_file_size(
-                        file_size, is_simulation=self._flasher.adapter.is_simulation
-                    )
-                    return {
-                        "path": path,
-                        "filename": filename,
-                        "sizeBytes": file_size,
-                        "isValid": True,
-                        "suggestedRegion": suggested,
-                    }
+            if len(webview.windows) == 0:
+                raise RuntimeError("No active desktop window is available for the file dialog.")
+            window = webview.windows[0]
+            dialog_type = getattr(getattr(webview, 'FileDialog', None), 'OPEN', getattr(webview, 'OPEN_DIALOG', 10))
+            result = window.create_file_dialog(dialog_type, file_types=file_types)
         except (ImportError, OSError, RuntimeError) as e:
             print(f"[Backend API File Dialog Error] {e}")
+            raise RuntimeError(f"Unable to open the file dialog: {e}") from e
 
-        # Fallback sample binary generation if native file dialog is unavailable or cancelled
-        regions = (
-            self._flasher.ecu.get_simulation_write_regions()
-            if self._flasher.adapter.is_simulation
-            else self._flasher.ecu.get_write_regions()
-        )
-        if region not in regions:
-            region = next(iter(regions), "full")
-        start, end, _ = regions.get(region, (0, self._flasher.ecu.TOTAL_FLASH_SIZE, ""))
-        size = end - start
-        pattern = bytes(((i * 29 + 0x5A) & 0xFF) for i in range(256))
-        data = (pattern * ((size + 255) // 256))[:size]
-        path = Path(tempfile.gettempdir()) / f"Mackanized flasher_sample_{region}_{size}.bin"
-        path.write_bytes(data)
-        self._settings.add_recent_file(str(path))
+        if not result:
+            return {"path": "", "filename": "", "sizeBytes": 0, "isValid": False}
+
+        path = result[0]
+        self._settings.add_recent_file(path)
+        filename = os.path.basename(path)
+        file_size = os.path.getsize(path)
+        if is_dll_pick:
+            return {"path": path, "filename": filename, "sizeBytes": file_size, "isValid": True}
         suggested = self._flasher.ecu.suggest_region_for_file_size(
-            size, is_simulation=self._flasher.adapter.is_simulation
+            file_size, is_simulation=self._flasher.adapter.is_simulation
         )
         return {
-            "path": str(path),
-            "filename": path.name,
-            "sizeBytes": size,
+            "path": path,
+            "filename": filename,
+            "sizeBytes": file_size,
             "isValid": True,
-            "isSimulation": True,
             "suggestedRegion": suggested,
         }
 
@@ -206,6 +235,8 @@ class PythonApiBridge:
             "densityMode": self._settings.density_mode,
             "defaultAdapter": self._settings.default_adapter_key,
             "j2534Dll": self._settings.j2534_dll_path,
+            "stnPort": self._settings.stn_port,
+            "socketcanInterface": self._settings.socketcan_interface,
             "baudrate": self._settings.baudrate,
             "disablePreflight": self._settings.disable_preflight,
         }
@@ -219,6 +250,10 @@ class PythonApiBridge:
             self._settings.default_adapter_key = settings_dict["defaultAdapter"]
         if "j2534Dll" in settings_dict:
             self._settings.j2534_dll_path = settings_dict["j2534Dll"]
+        if "stnPort" in settings_dict:
+            self._settings.stn_port = settings_dict["stnPort"]
+        if "socketcanInterface" in settings_dict:
+            self._settings.socketcan_interface = settings_dict["socketcanInterface"]
         if "baudrate" in settings_dict:
             self._settings.baudrate = int(settings_dict["baudrate"])
         if "disablePreflight" in settings_dict:

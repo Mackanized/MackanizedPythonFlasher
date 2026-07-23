@@ -61,6 +61,26 @@ class SettingsManager:
         self._settings.sync()
 
     @property
+    def stn_port(self) -> str:
+        import sys
+        default_port = "COM3" if sys.platform == "win32" else "/dev/ttyUSB0"
+        return str(self._settings.value("hardware/stn_port", default_port))
+
+    @stn_port.setter
+    def stn_port(self, value: str) -> None:
+        self._settings.setValue("hardware/stn_port", value)
+        self._settings.sync()
+
+    @property
+    def socketcan_interface(self) -> str:
+        return str(self._settings.value("hardware/socketcan_interface", "can0"))
+
+    @socketcan_interface.setter
+    def socketcan_interface(self, value: str) -> None:
+        self._settings.setValue("hardware/socketcan_interface", value)
+        self._settings.sync()
+
+    @property
     def baudrate(self) -> int:
         return int(self._settings.value("hardware/baudrate", 500000))
 

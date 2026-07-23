@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Check, FolderOpen } from 'lucide-react';
-import { WorkstationSettingsPayload, getPyWebViewGateway } from '../services/pywebview/bridge';
+import { Check, FolderOpen, RefreshCw } from 'lucide-react';
+import { ScannedPort, WorkstationSettingsPayload, getPyWebViewGateway } from '../services/pywebview/bridge';
 import { applyDesktopPreferences } from '../services/theme/preferences';
 
 type SettingsKey = keyof WorkstationSettingsPayload;
@@ -12,12 +12,17 @@ export default function SettingsWorkspace() {
     densityMode: 'standard',
     defaultAdapter: 'mock',
     j2534Dll: '',
+    stnPort: 'COM3',
+    socketcanInterface: 'can0',
     baudrate: 500000,
     disablePreflight: true,
   });
   const [loading, setLoading] = useState(true);
   const [savedNotice, setSavedNotice] = useState('');
   const [saving, setSaving] = useState(false);
+  const [scannedPorts, setScannedPorts] = useState<ScannedPort[] | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -82,6 +87,20 @@ export default function SettingsWorkspace() {
     }
   };
 
+  const handleScanPorts = async () => {
+    setScanning(true);
+    setScanError('');
+    try {
+      const ports = await gateway.scanSerialPorts();
+      setScannedPorts(ports);
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : 'Port scan failed.');
+      setScannedPorts(null);
+    } finally {
+      setScanning(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8 text-xs text-slate-400 font-sans">
@@ -143,7 +162,9 @@ export default function SettingsWorkspace() {
                 <option value="mock">Mock Adapter (Offline Simulator)</option>
                 <option value="j2534">SAE J2534 PassThru (DLL)</option>
                 <option value="kvaser">Kvaser CANlib (Native USB)</option>
+                <option value="stn">STN11xx / OBDLink (Serial)</option>
                 <option value="socketcan">Linux SocketCAN (Native Kernel)</option>
+                <option value="replay">Trace Replay Adapter</option>
               </select>
               <span className="text-[11px] mt-1 block" style={{ color: 'var(--text-muted)' }}>
                 Primary adapter interface loaded on workstation boot.
@@ -160,12 +181,21 @@ export default function SettingsWorkspace() {
                 className="w-full px-3 text-xs rounded-sm border focus:border-[#3B82F6]"
                 style={{ height: 'var(--control-height)', backgroundColor: 'var(--control-bg)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
               >
+                <option value={1000000}>1 Mbps (High-Speed CAN, Kvaser/STN)</option>
                 <option value={500000}>500 kbps (Standard High-Speed CAN)</option>
                 <option value={250000}>250 kbps (Medium-Speed CAN)</option>
-                <option value={33333}>33.3 kbps (GMLAN Low-Speed SW-CAN)</option>
+                <option value={125000}>125 kbps (Kvaser/STN)</option>
+                <option value={100000}>100 kbps (Kvaser/STN)</option>
+                <option value={83333}>83.3 kbps (Fault-Tolerant Low-Speed CAN, Kvaser/STN)</option>
+                <option value={62000}>62 kbps (Kvaser/STN)</option>
+                <option value={50000}>50 kbps (Kvaser/STN)</option>
+                <option value={33333}>33.3 kbps (GMLAN Single-Wire, STN only)</option>
+                <option value={10000}>10 kbps (Kvaser/STN)</option>
               </select>
               <span className="text-[11px] mt-1 block" style={{ color: 'var(--text-muted)' }}>
-                Bus speed initialized during adapter channel open.
+                Bus speed initialized during adapter channel open. Kvaser accepts every rate above except 33.3 kbps
+                GMLAN single-wire; STN/OBDLink only accepts 500 kbps and 33.3 kbps GMLAN. J2534 and SocketCAN pass
+                the rate straight through to the vendor DLL / OS-configured interface.
               </span>
             </div>
           </div>
@@ -195,6 +225,90 @@ export default function SettingsWorkspace() {
             <span className="text-[11px] mt-1 block" style={{ color: 'var(--text-muted)' }}>
               Leave blank to automatically enumerate registered J2534 PassThru drivers from Windows Registry.
             </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                STN11xx / OBDLink serial port
+              </label>
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={settings.stnPort ?? ''}
+                  onChange={(e) => handleChange('stnPort', e.target.value)}
+                  placeholder="COM3 (Windows) or /dev/ttyUSB0 (Linux)"
+                  className="flex-1 px-3 text-xs rounded-sm border focus:border-[#3B82F6] font-mono-code"
+                  style={{ height: 'var(--control-height)', backgroundColor: 'var(--control-bg)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleScanPorts}
+                  disabled={scanning}
+                  className="h-9 px-3 bg-[#2A2D38] hover:bg-[#323644] text-[#E2E8F0] rounded-sm border border-[#333646] font-semibold flex items-center space-x-1.5 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
+                  <span>{scanning ? 'Scanning...' : 'Scan ports'}</span>
+                </button>
+              </div>
+              <span className="text-[11px] mt-1 block" style={{ color: 'var(--text-muted)' }}>
+                Serial port used when the STN11xx / OBDLink adapter is selected. Don't know which COM port it's on?
+                Click Scan ports.
+              </span>
+              {scanError && (
+                <div className="mt-2 p-2 text-[11px] text-[#EF4444] bg-[#2A1518] border border-[#EF4444]/30 rounded-sm">
+                  {scanError}
+                </div>
+              )}
+              {scannedPorts && (
+                <div className="mt-2 border rounded-sm divide-y" style={{ borderColor: 'var(--panel-border)' }}>
+                  {scannedPorts.length === 0 && (
+                    <div className="p-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      No serial ports detected.
+                    </div>
+                  )}
+                  {scannedPorts.map((port) => (
+                    <button
+                      key={port.device}
+                      type="button"
+                      onClick={() => handleChange('stnPort', port.device)}
+                      className="w-full text-left p-2 text-[11px] flex items-center justify-between hover:bg-[#2A2D38]"
+                      style={{ backgroundColor: 'var(--control-bg)' }}
+                    >
+                      <span>
+                        <span className="font-mono-code font-semibold" style={{ color: 'var(--text-primary)' }}>
+                          {port.device}
+                        </span>
+                        <span className="ml-2" style={{ color: 'var(--text-muted)' }}>
+                          {port.description || 'Unknown device'}
+                          {port.manufacturer ? ` — ${port.manufacturer}` : ''}
+                        </span>
+                      </span>
+                      {port.likelyAdapter && (
+                        <span className="text-[10px] font-semibold text-emerald-400 shrink-0 ml-2">Likely adapter</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                SocketCAN interface name
+              </label>
+              <input
+                type="text"
+                value={settings.socketcanInterface ?? ''}
+                onChange={(e) => handleChange('socketcanInterface', e.target.value)}
+                placeholder="can0"
+                className="w-full px-3 text-xs rounded-sm border focus:border-[#3B82F6] font-mono-code"
+                style={{ height: 'var(--control-height)', backgroundColor: 'var(--control-bg)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
+              />
+              <span className="text-[11px] mt-1 block" style={{ color: 'var(--text-muted)' }}>
+                Linux kernel network interface used when SocketCAN is selected.
+              </span>
+            </div>
           </div>
         </div>
 

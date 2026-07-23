@@ -48,6 +48,12 @@ class BaseAdapter(ABC):
         """Clear the receive buffer. Override if the adapter supports this."""
         pass
 
+    def configure_for_ecu(self, tx_id: int, rx_id: int, flash_size: int) -> None:
+        """Apply per-ECU addressing/sizing. Real adapters filter a fixed
+        diagnostic ID range and need no per-ECU state; override where relevant
+        (e.g. the simulator, which must size its virtual flash)."""
+        pass
+
     def check_bus_status(self):
         """Check physical bus status. Override if the adapter supports this."""
         pass
@@ -101,7 +107,11 @@ class BaseAdapter(ABC):
         )
 
     def _assert_channel_access(self) -> None:
-        return None
+        if not self._channel_leased:
+            raise RuntimeError(
+                "Adapter channel access requires an exclusive_channel() lease; "
+                "call send_frame/read_frame only from within `with adapter.exclusive_channel():`."
+            )
 
     def _require_connected(self) -> None:
         if not self.is_connected():

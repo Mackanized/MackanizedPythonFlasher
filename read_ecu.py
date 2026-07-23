@@ -99,6 +99,8 @@ def main():
         app_logger.error("Could not connect to Kvaser interface.")
         return
 
+    channel_lease = adapter.exclusive_channel()
+    channel_lease.__enter__()
     try:
         adapter.check_bus_status()
         print("Clearing Kvaser receive buffer...")
@@ -360,6 +362,7 @@ def main():
             app_logger.info(f"Full 2MB flash file saved to: {filename} | Total time: {elapsed_m}m {elapsed_s}s")
 
     finally:
+        channel_lease.__exit__(None, None, None)
         adapter.disconnect()
         print("[Kvaser] Disconnected.")
         app_logger.info("Kvaser interface disconnected.")

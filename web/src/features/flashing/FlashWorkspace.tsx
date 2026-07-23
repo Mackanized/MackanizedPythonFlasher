@@ -53,12 +53,16 @@ export const FlashWorkspace: React.FC<FlashWorkspaceProps> = ({
 
   const handleSelectFile = async () => {
     setError('');
-    const res = await gateway.selectCalibrationFile(fsmContext.selectedRegion);
-    if (res.isValid && res.path) {
-      globalOperationMachine.selectFile(res.path);
-      if (res.suggestedRegion && writeRegions.includes(res.suggestedRegion)) {
-        globalOperationMachine.selectRegion(res.suggestedRegion);
+    try {
+      const res = await gateway.selectCalibrationFile(fsmContext.selectedRegion);
+      if (res.isValid && res.path) {
+        globalOperationMachine.selectFile(res.path);
+        if (res.suggestedRegion && writeRegions.includes(res.suggestedRegion)) {
+          globalOperationMachine.selectRegion(res.suggestedRegion);
+        }
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to select a calibration file.');
     }
   };
 
@@ -73,23 +77,32 @@ export const FlashWorkspace: React.FC<FlashWorkspaceProps> = ({
       setShowPreflight(false);
       return;
     }
-    const startResult = await gateway.startFlashWrite(
-      fsmContext.selectedFilePath,
-      fsmContext.selectedRegion,
-      true,
-      backupVerified,
-    );
-    setShowPreflight(false);
-    if (!startResult.accepted) {
-      setError('Flash start was rejected. Verify the ECU connection and that no operation is active.');
-      return;
+    try {
+      const startResult = await gateway.startFlashWrite(
+        fsmContext.selectedFilePath,
+        fsmContext.selectedRegion,
+        true,
+        backupVerified,
+      );
+      setShowPreflight(false);
+      if (!startResult.accepted) {
+        setError('Flash start was rejected. Verify the ECU connection and that no operation is active.');
+        return;
+      }
+      setError('');
+      setOperation(await gateway.getOperationStatus());
+    } catch (err) {
+      setShowPreflight(false);
+      setError(err instanceof Error ? err.message : 'Unable to start write.');
     }
-    setError('');
-    setOperation(await gateway.getOperationStatus());
   };
 
   const handleAbort = async () => {
-    await gateway.emergencyStop();
+    try {
+      await gateway.emergencyStop();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Emergency stop failed.');
+    }
     setOperation(await gateway.getOperationStatus());
   };
 
