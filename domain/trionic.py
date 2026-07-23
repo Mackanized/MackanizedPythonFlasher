@@ -15,10 +15,6 @@ from typing import Dict, Tuple
 from domain.memory_map import AddressRange
 
 
-SOURCE_COMMIT = "4d4c332a166f89c1a9627cd3c9c231fe5a0ed0b9"
-SOURCE_URL = f"https://github.com/roffe/Trionic/tree/{SOURCE_COMMIT}"
-
-
 class EvidenceLevel(str, Enum):
     VERIFIED = "verified"
     STRONGLY_INFERRED = "strongly-inferred"
@@ -78,10 +74,6 @@ class TrionicFlashProfile:
         for partition in self.partitions:
             if partition.address_range.end_exclusive > self.image_size:
                 raise ValueError(f"Partition {partition.name} exceeds the image boundary")
-
-    @property
-    def source_reference(self) -> str:
-        return SOURCE_URL
 
     @property
     def writable_ranges(self) -> Tuple[AddressRange, ...]:
