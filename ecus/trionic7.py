@@ -49,6 +49,25 @@ class Trionic7(BaseECU):
         ),
     )
 
+    def candidate_keys(self, seed: int) -> Tuple[int, int, int, int, int]:
+        """The five known T7 0x05/0x06 SecurityAccess key candidates.
+
+        Delegates to :func:`security.trionic.trionic7_candidate_keys` — kept
+        as a standalone function (rather than inlined here) since it has its
+        own focused test coverage and doesn't need ECU state. This method
+        exists so T7's key derivation is reachable the same way T8's
+        ``calculate_key`` is (as something you ask the ECU object for),
+        instead of being the one generation whose caller has to know to
+        import a module-level function directly.
+
+        Unlike T8, this returns multiple candidates rather than one key:
+        different physical T7 ECUs accept different candidates, so callers
+        try them in sequence (see Trionic7Client.authenticate()).
+        """
+        from security.trionic import trionic7_candidate_keys
+
+        return trionic7_candidate_keys(seed)
+
     def get_flash_addresses(self) -> List[AddressRange]:
         return [AddressRange(0x000000, self.TOTAL_FLASH_SIZE)]
 

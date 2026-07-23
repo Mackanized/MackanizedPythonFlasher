@@ -1,9 +1,9 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from domain.memory_map import AddressRange
 from domain.protocol_metadata import ProtocolFamily, AddressingMode
 from domain.trionic import TrionicGeneration, get_trionic_profile
 from security.seed_key import SecurityAccessPolicy
-from .base_ecu import BaseECU, EcuCapabilities, Step
+from .base_ecu import BaseECU, EcuCapabilities
 
 
 class Trionic8(BaseECU):
@@ -13,11 +13,11 @@ class Trionic8(BaseECU):
     CAN_ID_RX = 0x7E8
     PROTOCOL_FAMILY = ProtocolFamily.GMLAN
     ADDRESSING_MODE = AddressingMode.NORMAL_11_BIT
-    # Matches TrionicCANLib's default `_securityLevel = AccessLevel.AccessLevelFD`
-    # (a user-configurable field in the reference; every call site there uses
-    # this default). BaseECU's SECURITY_LEVEL alone does not affect the wire
-    # byte here — Trionic8 uses SEED_KEY_STEPS for key calculation, and the
-    # actual 0x27 request byte comes from SECURITY_POLICY.request_level below.
+    # 0xFD is the SecurityAccess level real T8 hardware expects for this
+    # flow (0xFB is a known alternate for some ECU variants; see
+    # calculate_key below). BaseECU's SECURITY_LEVEL alone does not affect
+    # the wire byte — Trionic8 overrides calculate_key() directly, and the
+    # actual 0x27 request byte comes from SECURITY_POLICY.request_level.
     SECURITY_LEVEL = 0xFD
     SECURITY_POLICY = SecurityAccessPolicy(request_level=0xFD, response_level=0xFE)
     TOTAL_FLASH_SIZE = 0x100000
@@ -49,14 +49,37 @@ class Trionic8(BaseECU):
         ),
     )
 
-    SEED_KEY_STEPS = [
-        Step(0x6B, 0x65, 0x07),
-        Step(0x4C, 0x0A, 0x77),
-        Step(0x7E, 0xF8, 0xDA),
-        Step(0x98, 0x3F, 0x52),
-    ]
-
     ERASE_SIZE = 0x0E0000
+
+    def calculate_key(self, seed: int, level: Optional[int] = None) -> int:
+        """T8 seed-to-key transform for SecurityAccess levels 0x01/0xFB/0xFD.
+
+        Verified against two independent implementations, which agree
+        exactly across multiple test seeds. Overrides BaseECU's generic
+        SEED_KEY_STEPS chain, which does not apply to T8 — that path
+        produced a different, non-functional key.
+
+        ``level`` defaults to this ECU's configured SECURITY_POLICY level
+        (0xFD); callers that need a different session level — e.g. the
+        alternate-bootloader entry path, which authenticates at level
+        0x01 — pass it explicitly. Level 0x01 applies neither of the
+        0xFD/0xFB post-transforms below, matching the reference algorithm
+        for that level.
+        """
+        key = ((seed >> 5) | (seed << 11)) & 0xFFFF
+        key = (key + 0xB988) & 0xFFFF
+        if level is None:
+            level = self.SECURITY_POLICY.request_level
+        if level == 0xFD:
+            key //= 3
+            key ^= 0x8749
+            key = (key + 0x0ACF) & 0xFFFF
+            key ^= 0x81BF
+        elif level == 0xFB:
+            key ^= 0x8749
+            key = (key + 0x06D3) & 0xFFFF
+            key ^= 0xCFDF
+        return key & 0xFFFF
 
     def get_flash_addresses(self) -> List[AddressRange]:
         return [

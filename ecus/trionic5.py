@@ -58,7 +58,7 @@ class _Trionic5Base(BaseECU):
     def validate_programming_checksum(self, data: bytes, region_name: str) -> bool:
         if region_name != "full":
             return False
-        from domain.trionic_firmware import inspect_t5_checksum
+        from firmware.trionic.checksums import inspect_t5_checksum
         return inspect_t5_checksum(data).valid
 
     def is_identity_compatible(self, live_identity: Dict[str, str]) -> bool:

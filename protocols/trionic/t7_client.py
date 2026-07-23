@@ -19,7 +19,6 @@ from firmware.trionic.checksums import TrionicChecksumError, inspect_t7_checksum
 from protocols.base_protocol import DownloadParameters, ProtocolClient
 from protocols.trionic.codecs import KwpCanCodec
 from protocols.trionic.transport import BoundedCanTransport
-from security.trionic import trionic7_candidate_keys
 
 
 class T7State(str, Enum):
@@ -77,14 +76,13 @@ class Trionic7Client(ProtocolClient):
             return True
         if self._state is T7State.CONNECTED:
             raise SessionError("T7 SecurityAccess requires the proprietary KWP session")
-        # Matches the reference TrionicCANLib KWPHandler.requestSequrityAccess,
-        # which tries both key-candidate methods in sequence rather than
-        # requiring the variant to be known ahead of time. Unlike the
-        # reference (which ignores NRC codes entirely), a lockout-indicating
-        # negative response (0x36 exceeded attempts, 0x37 delay not expired)
-        # aborts immediately instead of feeding it a second live key attempt.
+        # Tries all five known key-candidate methods in sequence, since
+        # different physical T7 ECUs accept different candidates; stops at
+        # the first one that's accepted. A lockout-indicating negative
+        # response (0x36 exceeded attempts, 0x37 delay not expired) aborts
+        # immediately instead of feeding it another live key attempt.
         last_error: Optional[Exception] = None
-        for variant in (0, 1):
+        for variant in range(5):
             try:
                 response = self._request(0x27, b"\x05")
                 if len(response) != 5 or response[1:3] != b"\x67\x05":
@@ -94,7 +92,7 @@ class Trionic7Client(ProtocolClient):
                     self._state = T7State.AUTHENTICATED
                     self._security_key_variant = variant
                     return True
-                key = trionic7_candidate_keys(seed)[variant]
+                key = self.ecu.candidate_keys(seed)[variant]
                 accepted = self._request(0x27, b"\x06" + key.to_bytes(2, "big"))
                 if len(accepted) >= 3 and accepted[1] == 0x67 and accepted[2] in (0x06, 0x34):
                     self._state = T7State.AUTHENTICATED
@@ -108,7 +106,7 @@ class Trionic7Client(ProtocolClient):
                     last_error = exc
                     continue
                 raise
-        raise SecurityAccessError(f"T7 SecurityAccess failed for both key variants: {last_error}", level=0x05)
+        raise SecurityAccessError(f"T7 SecurityAccess failed for all five key variants: {last_error}", level=0x05)
 
     def prepare_read_session(self) -> bool:
         if self._state is T7State.AUTHENTICATED:
@@ -151,8 +149,12 @@ class Trionic7Client(ProtocolClient):
         if self._state is not T7State.AUTHENTICATED:
             raise SessionError("T7 erase requires SecurityAccess")
         try:
-            for routine, limit in ((0x52, 16), (0x53, 21)):
-                deadline = self._clock.monotonic() + min(self.ecu.ERASE_TIMEOUT, float(limit + 1))
+            # Poll-count bounded rather than capped by a shared wall-clock
+            # ERASE_TIMEOUT: the actual erase routine (0x53) can legitimately
+            # take far longer to complete than the EOL-session routine
+            # (0x52), and giving up too early would abandon a real
+            # in-progress erase, forcing an unnecessary recovery state.
+            for routine, limit in ((0x52, 30), (0x53, 200)):
                 polls = 0
                 while True:
                     try:
@@ -166,10 +168,20 @@ class Trionic7Client(ProtocolClient):
                     if len(result) >= 2 and result[1] == 0x71:
                         break
                     polls += 1
-                    if polls > limit or self._clock.monotonic() >= deadline:
-                        raise TimeoutError(f"T7 erase routine 0x{routine:02X} deadline exceeded")
+                    if polls > limit:
+                        raise TimeoutError(f"T7 erase routine 0x{routine:02X} exceeded its retry budget")
                     self._clock.sleep(1.0)
-            confirmation = self._request(0x3E, b"\x53")
+            confirmation = None
+            for _ in range(10):
+                try:
+                    confirmation = self._request(0x3E, b"\x53")
+                    break
+                except NegativeResponseError as exc:
+                    if exc.nrc != 0x78:
+                        raise
+                    self._clock.sleep(1.0)
+            if confirmation is None:
+                raise TimeoutError("T7 erase confirmation exceeded its retry budget")
             if len(confirmation) < 2 or confirmation[1] != 0x7E:
                 raise DiagnosticError("T7 erase confirmation is malformed")
         except Exception:

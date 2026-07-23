@@ -9,10 +9,10 @@ from typing import Callable, Dict, Iterator, Optional, Tuple
 from adapters.base_adapter import BaseAdapter
 from domain.cancellation import CancellationToken
 from domain.clock import Clock, SystemClock
-from domain.errors import DiagnosticError
-from domain.trionic_firmware import inspect_t5_checksum
+from domain.errors import DiagnosticError, TransportError
 from ecus.base_ecu import BaseECU
-from firmware.trionic.loaders import LoaderCatalog
+from firmware.trionic.checksums import extract_t5_footer_identifiers, inspect_t5_checksum
+from firmware.trionic.loaders import LoaderId, get_default_catalog
 from protocols.base_protocol import DownloadParameters, ProtocolClient
 from protocols.trionic.codecs import EncodedCanFrame, T5CommandCodec
 from protocols.trionic.transport import BoundedCanTransport
@@ -71,7 +71,7 @@ class Trionic5Client(ProtocolClient):
         self._can.require_connection()
         if self._state is T5State.LOADER_ACTIVE:
             return True
-        loader = LoaderCatalog().get("t5-loader").read_verified()
+        loader = get_default_catalog().get(LoaderId.T5_LOADER).read_verified()
         begin = self._exchange(T5CommandCodec.begin_upload())
         self._require_ack(begin, 0xA5, "loader begin")
         start_vector = None
@@ -237,7 +237,7 @@ class Trionic5Client(ProtocolClient):
             raise DiagnosticError(
                 f"Unknown T5 flash identity chip=0x{chip_id:02X}, base=0x{physical_base:X}"
             )
-        return {
+        result = {
             "ecu_family": family,
             "flash_chip_id": f"0x{chip_id:02X}",
             "flash_manufacturer_id": f"0x{manufacturer:02X}",
@@ -245,6 +245,17 @@ class Trionic5Client(ProtocolClient):
             "physical_flash_base": f"0x{physical_base:X}",
             "identity_status": "live C9 flash-chip identity",
         }
+        # The last 0x80 bytes hold a reverse tag-length-value footer (part
+        # number, software version, engine type, IMMO code, ...). This is
+        # informational, not safety-relevant, so a read failure here must
+        # not break identification — only the chip-identity fields above do.
+        try:
+            footer = self.read_memory_by_address(size - 0x80, 0x80)
+        except (DiagnosticError, TransportError, TimeoutError, ValueError):
+            footer = None
+        if footer:
+            result.update(extract_t5_footer_identifiers(footer))
+        return result
 
     def enter_recovery_mode(self) -> bool:
         self._can.require_connection()

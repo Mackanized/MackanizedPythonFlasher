@@ -1,7 +1,13 @@
 {
+  "schema_version": 1,
+  "provenance": {
+    "repository": "https://github.com/mattiasclaesson/Trionic",
+    "commit": "4d4c332a166f89c1a9627cd3c9c231fe5a0ed0b9",
+    "license_evidence": "Redistributed with direct permission from the upstream author (mattiasclaesson)."
+  },
   "artifacts": [
     {
-      "filename": "t5_mybooty.s19",
+      "filename": "t5_loader.s19",
       "format": "motorola-s-record",
       "generation": "t5",
       "id": "t5-loader",
@@ -44,6 +50,5 @@
       "source_file": "TrionicCANLib/Bootloader_legion.cs",
       "source_symbol": "m_Bootloader_Legion"
     }
-  ],
-  "schema_version": 1
+  ]
 }

@@ -8,12 +8,13 @@ from adapters.base_adapter import BaseAdapter
 from domain.cancellation import CancellationToken
 from domain.errors import DiagnosticError
 from domain.trionic import TrionicGeneration
-from domain.trionic_firmware import inspect_t5_checksum, t8_last_used_address
 from ecus.base_ecu import BaseECU
 from firmware.trionic.checksums import (
     TrionicChecksumError,
+    inspect_t5_checksum,
     inspect_t7_checksums,
     inspect_t8_checksums,
+    t8_last_used_address,
 )
 from protocols.simulation.simulation_client import SimulationProtocolClient
 

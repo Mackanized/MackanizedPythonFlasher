@@ -23,6 +23,6 @@ scripts
 *.zip
 task_progress
 
-# Test scripts
-test_*.py
-test_*
+# Ad hoc test scripts left at the repo root (not the tests/ package)
+/test_*.py
+/test_*

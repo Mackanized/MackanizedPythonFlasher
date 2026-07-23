@@ -10,16 +10,28 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Tuple
 
 
+class LoaderId:
+    """Canonical loader artifact identifiers, to keep call sites and the
+    manifest's ``id`` field from drifting apart via a typo'd string literal.
+    """
+
+    T5_LOADER = "t5-loader"
+    T8_STOCK_READ = "t8-stock-read"
+    T8_STOCK_PROGRAM = "t8-stock-program"
+    T8_LEGION = "t8-legion"
+
+
 PINNED_COMMIT = "4d4c332a166f89c1a9627cd3c9c231fe5a0ed0b9"
 PINNED_ARTIFACTS = {
-    "t5-loader": (4483, "51feaa6e941ab21b7a335a775770b95edabfdc12d14261d0e03a2b12f8cd0f84"),
-    "t8-stock-read": (16667, "0dca5077278b359ec472c0cf9633333c0c4fd44ae40bcfd4c13721ba6ab466c6"),
-    "t8-stock-program": (16667, "2dbc646d059dec84b4818d1541610c13450f7c4fdffe0cf25bb35e90b50bcd76"),
-    "t8-legion": (16667, "0f74eeea85b1ae21d405ae071d481b25d693b6d0026b1ae3e96a6b2e28268778"),
+    LoaderId.T5_LOADER: (4483, "51feaa6e941ab21b7a335a775770b95edabfdc12d14261d0e03a2b12f8cd0f84"),
+    LoaderId.T8_STOCK_READ: (16667, "0dca5077278b359ec472c0cf9633333c0c4fd44ae40bcfd4c13721ba6ab466c6"),
+    LoaderId.T8_STOCK_PROGRAM: (16667, "2dbc646d059dec84b4818d1541610c13450f7c4fdffe0cf25bb35e90b50bcd76"),
+    LoaderId.T8_LEGION: (16667, "0f74eeea85b1ae21d405ae071d481b25d693b6d0026b1ae3e96a6b2e28268778"),
 }
 
 
@@ -135,6 +147,17 @@ class LoaderCatalog:
         if not isinstance(provenance, dict) or not isinstance(artifacts, list):
             raise LoaderIntegrityError("Trionic loader manifest is missing provenance or artifacts")
         return manifest
+
+
+@lru_cache(maxsize=1)
+def get_default_catalog() -> LoaderCatalog:
+    """Shared :class:`LoaderCatalog` for the standard on-disk loader directory.
+
+    Every call site that doesn't need a custom ``root`` (i.e. everything
+    except tests) should use this instead of constructing ``LoaderCatalog()``
+    directly, so the manifest is only read and parsed once per process.
+    """
+    return LoaderCatalog()
 
 
 def _validate_s_records(payload: bytes, identifier: str) -> None:

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from domain.trionic import SOURCE_COMMIT, TrionicGeneration, get_trionic_profile
-from firmware.trionic.loaders import LoaderCatalog, LoaderIntegrityError
+from firmware.trionic.loaders import LoaderCatalog, LoaderIntegrityError, get_default_catalog
 
 
 _REQUIRED_SCENARIOS = {
@@ -89,7 +89,7 @@ class TrionicPhysicalWriteGate:
             checks.append(ReleaseCheck(name, bool(passed), evidence))
 
         profile = get_trionic_profile(generation)
-        catalog = loader_catalog or LoaderCatalog()
+        catalog = loader_catalog or get_default_catalog()
         try:
             artifacts = catalog.validate_all()
         except (LoaderIntegrityError, OSError) as exc:

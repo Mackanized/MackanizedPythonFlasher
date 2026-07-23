@@ -9,10 +9,9 @@ from adapters.base_adapter import BaseAdapter
 from domain.cancellation import CancellationToken
 from domain.clock import Clock, SystemClock
 from domain.errors import DiagnosticError, NegativeResponseError, SessionError, TransportError
-from domain.trionic_firmware import t8_last_used_address
 from ecus.base_ecu import BaseECU
-from firmware.trionic.checksums import TrionicChecksumError, inspect_t8_checksums
-from firmware.trionic.loaders import LoaderCatalog
+from firmware.trionic.checksums import TrionicChecksumError, inspect_t8_checksums, t8_last_used_address
+from firmware.trionic.loaders import LoaderId, get_default_catalog
 from protocols.base_protocol import DownloadParameters
 from protocols.gmlan.gmlan_client import GMLANClient
 from protocols.isotp.isotp_transport import ISOTPTransport
@@ -94,8 +93,8 @@ class Trionic8Client(GMLANClient):
         self.send_tester_present()
         self.authenticate()
         self._clock.sleep(0.05)
-        loader_id = "t8-stock-read" if purpose == "read" else "t8-stock-program"
-        self._upload_loader(LoaderCatalog().get(loader_id).read_verified())
+        loader_id = LoaderId.T8_STOCK_READ if purpose == "read" else LoaderId.T8_STOCK_PROGRAM
+        self._upload_loader(get_default_catalog().get(loader_id).read_verified())
         self._clock.sleep(0.05)
         self._start_loader(self.LOADER_ENTRY)
         self._clock.sleep(0.10)
@@ -345,15 +344,79 @@ class Trionic8Client(GMLANClient):
         self._loader_purpose = None
         return True
 
+    # (field name, PID, decode kind). Field names match GMLANClient's
+    # _INFO_DISPATCH naming where the same PID is used elsewhere (main_os,
+    # top_speed, saab_pn, end_pn, base_pn, diag_data_id, tester_serial) for
+    # consistency across ECU families. Two PIDs from the reference table
+    # ("0F identifier" 0x0F, "75 identifier" 0x75) are omitted: their actual
+    # meaning is unclear even in the reference, and mislabeling them would
+    # be worse than not exposing them.
+    _INFO_PIDS = (
+        ("vin", 0x90, "string"),
+        ("hardware_type", 0x97, "string"),
+        ("supplier", 0x92, "string"),
+        ("serial", 0xB4, "string"),
+        ("calibration_set", 0x74, "string"),
+        ("codefile_version", 0x73, "string"),
+        ("ecu_description", 0x72, "string"),
+        ("ecu_hardware", 0x71, "string"),
+        ("sw_number", 0x95, "hex"),
+        ("programming_date", 0x99, "bcd_date"),
+        ("build_date", 0x0A, "string"),
+        ("software_version", 0x08, "string"),
+        ("main_os", 0xC1, "string"),
+        ("engine_calib", 0xC2, "string"),
+        ("system_calib", 0xC3, "string"),
+        ("speedo_calib", 0xC4, "string"),
+        ("slave_os", 0xC5, "string"),
+        ("sw_identifier_6", 0xC6, "string"),
+        ("engine_type", 0x0C, "string"),
+        ("top_speed", 0x02, "speed_kmh"),
+        ("oil_quality", 0x25, "hex"),
+        ("saab_pn", 0x7C, "int"),
+        ("diag_data_id", 0x9A, "hex"),
+        ("end_pn", 0xCB, "int"),
+        ("base_pn", 0xCC, "int"),
+        ("mfg_enable_counter", 0xA0, "int"),
+        ("tester_serial", 0x98, "string"),
+    )
+
+    @staticmethod
+    def _decode_info_field(kind: str, raw: bytes) -> str:
+        if kind == "string":
+            return raw.decode("ascii", errors="replace").strip("\x00 ")
+        if kind == "hex":
+            return raw.hex().upper()
+        if kind == "int":
+            return str(int.from_bytes(raw, "big")) if raw else "Unknown"
+        if kind == "speed_kmh":
+            if len(raw) >= 2:
+                return f"{((raw[0] << 8) | raw[1]) / 10:.1f}"
+            return "Unknown"
+        if kind == "bcd_date":
+            if len(raw) >= 4:
+                y = f"{raw[0]>>4:X}{raw[0]&0x0F:X}{raw[1]>>4:X}{raw[1]&0x0F:X}"
+                m = f"{raw[2]>>4:X}{raw[2]&0x0F:X}"
+                d = f"{raw[3]>>4:X}{raw[3]&0x0F:X}"
+                return f"{y}-{m}-{d}"
+            return "Unknown"
+        return raw.hex().upper()
+
     def read_ecu_info(self) -> Dict[str, str]:
         self._require_connection()
         if self._state is T8State.CONNECTED:
             self.enter_programming_mode()
         result: Dict[str, str] = {}
-        for name, pid in (("vin", 0x90), ("hardware_type", 0x97), ("supplier", 0x92), ("serial", 0xB4)):
-            response = self._request(bytes((0x1A, pid)), 0x5A)
+        for name, pid, kind in self._INFO_PIDS:
+            # Not every PID is necessarily supported on every T8 software
+            # revision; one unsupported/negative-response field must not
+            # take down identification for the fields that did work.
+            try:
+                response = self._request(bytes((0x1A, pid)), 0x5A)
+            except (NegativeResponseError, DiagnosticError, TimeoutError):
+                continue
             if len(response) >= 2 and response[1] == pid:
-                result[name] = response[2:].decode("ascii", errors="replace").strip("\x00 ")
+                result[name] = self._decode_info_field(kind, response[2:])
         if result.get("vin") or result.get("hardware_type"):
             result["ecu_family"] = self.ecu.NAME
         return result
@@ -417,7 +480,7 @@ class Trionic8Client(GMLANClient):
             self.enter_recovery_mode()
         if self._recovery_tp is None:
             return False
-        self._upload_loader(LoaderCatalog().get("t8-stock-program").read_verified(), self._recovery_tp)
+        self._upload_loader(get_default_catalog().get(LoaderId.T8_STOCK_PROGRAM).read_verified(), self._recovery_tp)
         self._clock.sleep(0.05)
         self._start_loader(self.LOADER_ENTRY, self._recovery_tp)
         self._loader_purpose = "program"

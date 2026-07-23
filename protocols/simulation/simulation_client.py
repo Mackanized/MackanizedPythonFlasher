@@ -7,7 +7,6 @@ from domain.cancellation import CancellationToken
 from domain.errors import DiagnosticError, SecurityAccessError
 from ecus.base_ecu import BaseECU
 from protocols.base_protocol import DownloadParameters, ProtocolClient
-from security.trionic import trionic7_candidate_keys
 
 
 class SimulationProtocolClient(ProtocolClient):
@@ -37,8 +36,10 @@ class SimulationProtocolClient(ProtocolClient):
     def authenticate(self) -> bool:
         level = self.ecu.SECURITY_LEVEL
         seed = int(self._call("simulation_request_seed", level, self.ecu.SECURITY_POLICY.seed_length))
-        if getattr(self.ecu, "REGISTRY_KEY", "") == "t7":
-            key = trionic7_candidate_keys(seed)[0]
+        if hasattr(self.ecu, "candidate_keys"):
+            # T7 accepts several key-derivation variants depending on the
+            # physical ECU; the simulator only ever needs the first one.
+            key = self.ecu.candidate_keys(seed)[0]
         else:
             key = self.ecu.calculate_key(seed)
         accepted = bool(self._call("simulation_submit_key", level + 1, key, key))
