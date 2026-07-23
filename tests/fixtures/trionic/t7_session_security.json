@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "T7 KWP row session and SecurityAccess",
+  "ecu": "t7",
+  "evidence": "synthetic-reference",
+  "frames": [
+    {"direction": "tx", "can_id": "0x220", "data": "3F 81 00 11 02 40 00", "note": "start diagnostic session"},
+    {"direction": "rx", "can_id": "0x238", "data": "00 00 00 00 00 00 00 00", "note": "session response row"},
+    {"direction": "tx", "can_id": "0x240", "data": "40 A1 02 27 05 00 00 00", "note": "request level-05 seed"},
+    {"direction": "rx", "can_id": "0x258", "data": "C0 BF 04 67 05 12 34 00", "note": "seed response row"},
+    {"direction": "tx", "can_id": "0x266", "data": "40 A1 3F 80 00", "note": "acknowledge seed response row"},
+    {"direction": "tx", "can_id": "0x240", "data": "40 A1 04 27 06 A6 3C 00", "note": "submit identity-selected level-06 key"},
+    {"direction": "rx", "can_id": "0x258", "data": "C0 BF 02 67 06 00 00 00", "note": "key accepted"},
+    {"direction": "tx", "can_id": "0x266", "data": "40 A1 3F 80 00", "note": "acknowledge key response row"}
+  ]
+}

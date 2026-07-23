@@ -12,6 +12,7 @@ from .base_step import BaseStep
 
 
 ADAPTERS = [
+    ("Simulator", "Offline ECU simulator", "mock"),
     ("Kvaser", "Kvaser CANlib", "kvaser"),
     ("J2534", "J2534 PassThru", "j2534"),
 ]
@@ -72,17 +73,23 @@ class StepAdapter(BaseStep):
 
     def _on_select(self, key: str):
         self._choice = key
+        if key in self._cards:
+            self._cards[key].setChecked(True)
         is_j2534 = key == "j2534"
         self._j2534_label.setVisible(is_j2534)
         self._j2534_combo.setVisible(is_j2534)
 
         if is_j2534:
             self._refresh_j2534_devices()
+        else:
+            self._j2534_dll = None
 
-        self.next_enabled.emit(True)
+        self.adapter_selected.emit(key)
+        self.next_enabled.emit(self._can_continue())
 
     def _refresh_j2534_devices(self):
         self._j2534_combo.clear()
+        self._j2534_dll = None
         try:
             from adapters.j2534 import get_installed_j2534_devices
             devices = get_installed_j2534_devices()
@@ -95,16 +102,27 @@ class StepAdapter(BaseStep):
         except Exception:
             self._j2534_combo.addItem("Error scanning registry", None)
 
-    def _on_j2534_device_change(self):
+        self._on_j2534_device_change(self._j2534_combo.currentIndex())
+
+    def _on_j2534_device_change(self, index=None):
         idx = self._j2534_combo.currentIndex()
         if idx >= 0:
             self._j2534_dll = self._j2534_combo.itemData(idx)
+        else:
+            self._j2534_dll = None
+        if self._choice == "j2534":
+            self.next_enabled.emit(self._j2534_dll is not None)
 
     def get_adapter_key(self) -> str:
-        return self._choice or "kvaser"
+        return self._choice or "mock"
 
     def get_j2534_dll(self):
         return self._j2534_dll
 
     def on_enter(self):
-        self.next_enabled.emit(self._choice is not None)
+        self.next_enabled.emit(self._can_continue())
+
+    def _can_continue(self) -> bool:
+        return self._choice is not None and (
+            self._choice != "j2534" or self._j2534_dll is not None
+        )

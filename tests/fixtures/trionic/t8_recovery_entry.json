@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "name": "T8 recovery-address session entry",
+  "ecu": "t8",
+  "evidence": "synthetic-reference",
+  "frames": [
+    {"direction": "tx", "can_id": "0x011", "data": "02 10 02 00 00 00 00 00", "note": "recovery programming-session request"},
+    {"direction": "rx", "can_id": "0x311", "data": "02 50 02 00 00 00 00 00", "note": "recovery session accepted"},
+    {"direction": "tx", "can_id": "0x011", "data": "01 28 00 00 00 00 00 00", "note": "disable communication"},
+    {"direction": "rx", "can_id": "0x311", "data": "01 68 00 00 00 00 00 00", "note": "communication disabled"},
+    {"direction": "tx", "can_id": "0x011", "data": "01 A2 00 00 00 00 00 00", "note": "report programmed state"},
+    {"direction": "rx", "can_id": "0x311", "data": "02 E2 01 00 00 00 00 00", "note": "recovery state active"},
+    {"direction": "tx", "can_id": "0x011", "data": "01 28 00 00 00 00 00 00", "note": "disable communication before programming mode"},
+    {"direction": "rx", "can_id": "0x311", "data": "01 68 00 00 00 00 00 00", "note": "communication disabled"},
+    {"direction": "tx", "can_id": "0x011", "data": "02 A5 01 00 00 00 00 00", "note": "request programming mode"},
+    {"direction": "rx", "can_id": "0x311", "data": "02 E5 01 00 00 00 00 00", "note": "programming mode accepted"},
+    {"direction": "tx", "can_id": "0x011", "data": "02 A5 03 00 00 00 00 00", "note": "enable programming mode; no response"},
+    {"direction": "tx", "can_id": "0x011", "data": "02 27 01 00 00 00 00 00", "note": "request seed"},
+    {"direction": "rx", "can_id": "0x311", "data": "04 67 01 5F 94 00 00 00", "note": "known-answer seed"},
+    {"direction": "tx", "can_id": "0x011", "data": "04 27 02 5C 84 00 00 00", "note": "known-answer key"},
+    {"direction": "rx", "can_id": "0x311", "data": "02 67 02 00 00 00 00 00", "note": "security accepted"}
+  ]
+}

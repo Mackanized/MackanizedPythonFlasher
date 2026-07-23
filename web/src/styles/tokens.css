@@ -1,0 +1,141 @@
+/* PythonFlasher Desktop Design System Tokens */
+
+:root {
+  /* Canvas & Surface Colors */
+  --bg-canvas: #0f1115;
+  --bg-surface-base: #16191e;
+  --bg-surface-raised: #1e2229;
+  --bg-surface-overlay: #262b34;
+  --bg-surface-active: #2e3440;
+
+  /* Typography Colors */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-disabled: #475569;
+  --text-inverse: #0f1115;
+
+  /* Accent Color System (Restrained Blue) */
+  --accent-primary: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-active: #1e40af;
+  --accent-subtle: rgba(37, 99, 235, 0.12);
+  --accent-border: rgba(37, 99, 235, 0.35);
+
+  /* Status Colors */
+  --status-success: #10b981;
+  --status-success-bg: rgba(16, 185, 129, 0.1);
+  --status-warning: #f59e0b;
+  --status-warning-bg: rgba(245, 158, 11, 0.1);
+  --status-danger: #ef4444;
+  --status-danger-bg: rgba(239, 68, 68, 0.1);
+  --status-info: #0ea5e9;
+  --status-info-bg: rgba(14, 165, 233, 0.1);
+
+  /* Borders & Dividers */
+  --border-subtle: #242831;
+  --border-strong: #333a46;
+  --border-focus: #2563eb;
+
+  /* Fonts */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+
+  /* Density & Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --header-height: 48px;
+  --nav-width: 200px;
+  --drawer-height: 160px;
+
+  /* Semantic app surfaces consumed by the desktop shell */
+  --app-bg: #0a0b10;
+  --app-header-bg: #141519;
+  --app-main-bg: #0e1018;
+  --app-nav-bg: #0d0e12;
+  --app-drawer-bg: #0b0c10;
+  --control-bg: #141519;
+  --panel-bg: #1b1c22;
+  --panel-border: #2a2d38;
+  --row-hover-bg: #181b27;
+  --selected-bg: #2563eb;
+  --selected-text: #ffffff;
+  --danger-bg: #350f0f;
+  --danger-border: #7f1d1d;
+  --danger-text: #fda4af;
+
+  --workspace-padding: 24px;
+  --control-height: 36px;
+}
+
+:root[data-theme="oled"] {
+  --bg-canvas: #000000;
+  --bg-surface-base: #07080a;
+  --bg-surface-raised: #101216;
+  --bg-surface-overlay: #171a20;
+  --bg-surface-active: #20242c;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #a7b3c4;
+  --text-muted: #718096;
+  --text-disabled: #4b5563;
+
+  --border-subtle: #1c2028;
+  --border-strong: #2b3340;
+
+  --app-bg: #000000;
+  --app-header-bg: #07080a;
+  --app-main-bg: #030405;
+  --app-nav-bg: #050607;
+  --app-drawer-bg: #000000;
+  --control-bg: #090b0e;
+  --panel-bg: #0d0f13;
+  --panel-border: #252b36;
+  --row-hover-bg: #10141b;
+}
+
+:root[data-theme="light"] {
+  --bg-canvas: #f4f6f8;
+  --bg-surface-base: #ffffff;
+  --bg-surface-raised: #f8fafc;
+  --bg-surface-overlay: #eef2f7;
+  --bg-surface-active: #e2e8f0;
+
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-disabled: #94a3b8;
+  --text-inverse: #ffffff;
+
+  --border-subtle: #d7dee8;
+  --border-strong: #b8c3d2;
+
+  --app-bg: #eef2f7;
+  --app-header-bg: #ffffff;
+  --app-main-bg: #f4f6f8;
+  --app-nav-bg: #ffffff;
+  --app-drawer-bg: #ffffff;
+  --control-bg: #ffffff;
+  --panel-bg: #ffffff;
+  --panel-border: #cbd5e1;
+  --row-hover-bg: #e8eef6;
+  --selected-bg: #2563eb;
+  --selected-text: #ffffff;
+}
+
+:root[data-density="compact"] {
+  --workspace-padding: 16px;
+  --control-height: 30px;
+  --header-height: 32px;
+  --drawer-height: 132px;
+}
+
+:root[data-density="compact"] body {
+  font-size: 12px;
+}
+
+:root[data-density="standard"] body {
+  font-size: 13px;
+}

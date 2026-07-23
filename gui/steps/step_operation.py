@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -85,6 +86,7 @@ class StepOperation(BaseStep):
         self._file_edit = QLineEdit()
         self._file_edit.setMinimumHeight(40)
         self._file_edit.setVisible(False)
+        self._file_edit.textChanged.connect(lambda _text: self._validate())
         file_row.addWidget(self._file_edit)
 
         self._browse_btn = QPushButton("Browse")
@@ -94,6 +96,11 @@ class StepOperation(BaseStep):
         file_row.addWidget(self._browse_btn)
         layout.addLayout(file_row)
 
+        self._backup_verified = QCheckBox("Verified backup exists for this ECU before writing")
+        self._backup_verified.setVisible(False)
+        self._backup_verified.stateChanged.connect(lambda _state: self._validate())
+        layout.addWidget(self._backup_verified)
+
         layout.addStretch()
 
     def _on_op_select(self, key: str):
@@ -102,6 +109,7 @@ class StepOperation(BaseStep):
         self._file_label.setVisible(is_write)
         self._file_edit.setVisible(is_write)
         self._browse_btn.setVisible(is_write)
+        self._backup_verified.setVisible(is_write)
         self._region_label.setVisible(key != "info")
         self._region_combo.setVisible(key != "info")
         self._validate()
@@ -146,7 +154,7 @@ class StepOperation(BaseStep):
     def _validate(self):
         ok = self._operation is not None
         if ok and self._operation == "write":
-            ok = bool(self._file_edit.text().strip())
+            ok = bool(self._file_edit.text().strip()) and self._backup_verified.isChecked()
         self.next_enabled.emit(ok)
 
     def get_operation(self) -> str:
@@ -157,6 +165,9 @@ class StepOperation(BaseStep):
 
     def get_filename(self) -> str:
         return self._file_edit.text().strip()
+
+    def is_backup_verified(self) -> bool:
+        return self._backup_verified.isChecked()
 
     def on_enter(self):
         if self._ecu:

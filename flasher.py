@@ -3,9 +3,13 @@ import time
 from typing import Callable, Dict, Optional, Tuple
 
 from adapters.base_adapter import BaseAdapter
+from application.operations.session_manager import SessionManager
+from application.operations.write_operation import WriteOperation
 from ecus.base_ecu import BaseECU
 from gmlan import GMLANClient
 from logger import app_logger
+from protocols.factory import DefaultProtocolClientFactory
+from domain.cancellation import CancellationToken
 
 
 def _console_progress(percent: float, message: str):
@@ -25,28 +29,37 @@ class ECUFlasher:
         adapter: BaseAdapter,
         ecu: BaseECU,
         progress_callback: Optional[Callable[[float, str], None]] = None,
+        cancellation_token: Optional[CancellationToken] = None,
+        confirmation_provider=None,
     ):
         self.adapter = adapter
         self.ecu = ecu
         self.gmlan: Optional[GMLANClient] = None
         self._progress_cb = progress_callback or _console_progress
+        self._cancel = cancellation_token or CancellationToken()
+        self._confirmation_provider = confirmation_provider
         self._last_tp_time: float = 0.0
+        self._owns_connection = False
 
     # ── Connection ───────────────────────────────────────────────────
 
     def connect(self, baudrate: int = 500000) -> bool:
-        if not self.adapter.connect(baudrate=baudrate):
-            app_logger.error("Failed to connect adapter.")
-            return False
-        self.adapter.check_bus_status()
+        if not self.adapter.is_connected():
+            if not self.adapter.connect(baudrate=baudrate):
+                app_logger.error("Failed to connect adapter.")
+                return False
+            self.adapter.check_bus_status()
+            self._owns_connection = True
+        else:
+            self._owns_connection = False
         self._clear_bus_buffer()
-        self.gmlan = GMLANClient(self.adapter, self.ecu)
+        self.gmlan = DefaultProtocolClientFactory().create(self.adapter, self.ecu, self._cancel)
         self._last_tp_time = 0.0
         app_logger.info(f"Connected via {type(self.adapter).__name__} to {self.ecu.NAME}.")
         return True
 
     def disconnect(self):
-        if self.adapter:
+        if self.adapter and self._owns_connection:
             self.adapter.disconnect()
             app_logger.info("Adapter disconnected.")
 
@@ -252,6 +265,49 @@ class ECUFlasher:
 
         return self.write_region(start, end, data)
 
+    def write_from_plan(self, plan) -> bool:
+        if not self.gmlan:
+            raise RuntimeError("Not connected. Call connect() first.")
+        operation = WriteOperation(
+            self.gmlan,
+            self.ecu,
+            SessionManager(self.gmlan, self._cancel),
+            progress_callback=self._progress_cb,
+            cancellation_token=self._cancel,
+        )
+        return operation.execute(plan)
+
+    # ── Recovery ─────────────────────────────────────────────────────
+
+    def prepare_recovery(self) -> bool:
+        """Enter the ECU-family recovery path and prepare its loader.
+
+        This is intentionally separate from the normal managed write flow. For
+        Trionic 8 the protocol client enters the 0x011/0x311 recovery session,
+        performs security access, uploads the stock recovery programming loader,
+        and starts it. It does not erase or transfer a flash image.
+        """
+        if not self.gmlan:
+            raise RuntimeError("Not connected. Call connect() first.")
+
+        enter_recovery = getattr(self.gmlan, "enter_recovery_mode", None)
+        if not callable(enter_recovery):
+            raise RuntimeError(f"{self.ecu.NAME} does not expose a recovery session.")
+
+        self._report(5.0, "Entering recovery session...")
+        if not enter_recovery():
+            return False
+
+        prepare_loader = getattr(self.gmlan, "prepare_recovery_loader", None)
+        if callable(prepare_loader):
+            self._report(45.0, "Uploading recovery loader...")
+            if not prepare_loader():
+                return False
+            self._report(95.0, "Recovery loader active.")
+        else:
+            self._report(95.0, "Recovery session active.")
+        return True
+
     # ── ECU Info ─────────────────────────────────────────────────────
 
     _INFO_DISPATCH = {
@@ -285,6 +341,10 @@ class ECUFlasher:
         """Read and return ECU identification data for supported PIDs only."""
         if not self.gmlan:
             raise RuntimeError("Not connected. Call connect() first.")
+
+        protocol_info_reader = getattr(self.gmlan, "read_ecu_info", None)
+        if callable(protocol_info_reader) and type(self.gmlan).__module__.startswith("protocols."):
+            return dict(protocol_info_reader())
 
         # Ensure ECU is in diagnostic session so it responds to $1A PID requests
         self.gmlan.enter_programming_mode()
@@ -390,6 +450,8 @@ class ECUFlasher:
 
     def _confirm(self, prompt: str) -> bool:
         """Ask user for y/N confirmation. Override for GUI support."""
+        if self._confirmation_provider is not None:
+            return bool(self._confirmation_provider.confirm(prompt))
         try:
             answer = input(prompt).strip().lower()
             return answer in ('y', 'yes')

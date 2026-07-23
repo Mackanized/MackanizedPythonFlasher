@@ -1,0 +1,49 @@
+{
+  "artifacts": [
+    {
+      "filename": "t5_mybooty.s19",
+      "format": "motorola-s-record",
+      "generation": "t5",
+      "id": "t5-loader",
+      "purpose": "read-write",
+      "sha256": "51feaa6e941ab21b7a335a775770b95edabfdc12d14261d0e03a2b12f8cd0f84",
+      "size": 4483,
+      "source_file": "TrionicCANLib/Trionic5.cs",
+      "source_symbol": "MyBooty"
+    },
+    {
+      "filename": "t8_stock_read.bin",
+      "format": "binary",
+      "generation": "t8",
+      "id": "t8-stock-read",
+      "purpose": "read-recovery",
+      "sha256": "0dca5077278b359ec472c0cf9633333c0c4fd44ae40bcfd4c13721ba6ab466c6",
+      "size": 16667,
+      "source_file": "TrionicCANLib/Bootloader.cs",
+      "source_symbol": "m_Bootloader"
+    },
+    {
+      "filename": "t8_stock_program.bin",
+      "format": "binary",
+      "generation": "t8",
+      "id": "t8-stock-program",
+      "purpose": "program-recovery",
+      "sha256": "2dbc646d059dec84b4818d1541610c13450f7c4fdffe0cf25bb35e90b50bcd76",
+      "size": 16667,
+      "source_file": "TrionicCANLib/Bootloader.cs",
+      "source_symbol": "m_BootloaderProg"
+    },
+    {
+      "filename": "t8_legion.bin",
+      "format": "binary",
+      "generation": "t8",
+      "id": "t8-legion",
+      "purpose": "read-program-recovery",
+      "sha256": "0f74eeea85b1ae21d405ae071d481b25d693b6d0026b1ae3e96a6b2e28268778",
+      "size": 16667,
+      "source_file": "TrionicCANLib/Bootloader_legion.cs",
+      "source_symbol": "m_Bootloader_Legion"
+    }
+  ],
+  "schema_version": 1
+}

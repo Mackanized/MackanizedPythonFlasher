@@ -1,12 +1,31 @@
 from typing import Dict, List, Tuple
-from .base_ecu import BaseECU, Step
+from domain.memory_map import AddressRange
+from .base_ecu import BaseECU, EcuCapabilities, Step
 
 
 class Motronic961(BaseECU):
     NAME = "Bosch ME9.6.1"
+    REGISTRY_KEY = "me961"
     CAN_ID_TX = 0x7E0
     CAN_ID_RX = 0x7E8
-    SECURITY_LEVEL = 0x01
+    TOTAL_FLASH_SIZE = 0x200000
+    FLASH_SIZE = TOTAL_FLASH_SIZE
+    CAPABILITIES = EcuCapabilities(
+        supports_identification=True,
+        supports_full_read=True,
+        supports_calibration_read=True,
+        supports_full_write=True,
+        supports_calibration_write=True,
+        supports_recovery=True,
+        supports_checksum_validation=True,
+        development_status="production-hardware-read-write",
+        evidence_reference="MED9.6.1 diagnostic profile; physical hardware read and write enabled",
+    )
+
+    PHYSICAL_PROGRAMMING_IMPLEMENTED = True
+    PROGRAMMING_STRATEGY = "MED9.6.1 CCP calibration programming"
+    CHECKSUM_STRATEGY = "MED9.6.1 CCP 0xC001 CRC"
+    RECOVERY_STRATEGY = "CCP recovery session"
 
     READ_HIGH_SPEED_CHUNK = 0xFA  # 250 bytes
 
@@ -19,6 +38,17 @@ class Motronic961(BaseECU):
 
     ERASE_SIZE = 0x180000
     GAPS = [(0x1C0000, 0x1C2000)]
+
+    def get_flash_addresses(self) -> List[AddressRange]:
+        start = 0x000000
+        total = 0x200000
+        chunk_size = 0x10000
+        ranges = []
+        while start < total:
+            length = min(chunk_size, total - start)
+            ranges.append(AddressRange.from_start_and_length(start, length))
+            start += length
+        return ranges
 
     # ── Checksum / CVN info (from A2L 430LDY6000_MED9.6.1) ───────────
     # CCP checksum algorithm: 0xC001 (manufacturer-specific, CRC table variant 2)
@@ -48,16 +78,10 @@ class Motronic961(BaseECU):
     #   calibid2  0x80332A  (16 bytes)
     #   calibid3  0x80333A  (16 bytes)
 
-    def get_flash_addresses(self) -> List[Tuple[int, int]]:
-        start = 0x000000
-        total = 0x200000
-        chunk_size = 0x10000
-        ranges = []
-        while start < total:
-            length = min(chunk_size, total - start)
-            ranges.append((start, length))
-            start += length
-        return ranges
+    def is_identity_compatible(self, live_identity: Dict[str, str]) -> bool:
+        vin = live_identity.get("vin", "").strip()
+        hardware = live_identity.get("hardware_type", "").strip()
+        return len(vin) == 17 or bool(hardware)
 
     def get_flash_regions(self) -> Dict[str, Tuple[int, int, str]]:
         return {

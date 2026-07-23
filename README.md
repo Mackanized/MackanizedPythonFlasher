@@ -25,9 +25,10 @@ PythonFlasher is free and open-source **Donationware**. If this project helps yo
 
 ## 📌 Background & Architecture
 
-In the automotive tuning and repair community, reading and writing ECU firmware often requires expensive proprietary hardware interfaces or legacy OEM software toolchains. 
+In the automotive tuning and repair community, reading and writing ECU firmware often requires expensive proprietary hardware interfaces or legacy OEM software toolchains.
 
 **PythonFlasher** was built around **strict modularity**:
+
 - **Plug-and-Play ECU Modules**: New ECUs are implemented as standalone `.py` classes inheriting from `BaseECU`. Adding support for a new ECU simply requires dropping a new file into `ecus/`!
 - **Modular Hardware Adapters**: Universal interface layer for **Kvaser**, **J2534 PassThru**, and **STN**.
 - **Transport & Flashing Engine**: Core ISO-TP engine and session state manager decoupled from user interfaces.
@@ -70,7 +71,7 @@ class MyNewECU(BaseECU):
     READ_FALLBACK_CHUNK = 0x02       # Fallback chunk size (2 bytes)
     ERASE_SIZE = 0x180000            # Code erase block footprint
     WRITE_BLOCK_SIZE = 4088          # Write payload chunk size
-    
+
     # Optional unreadable/reserved memory gaps to skip automatically:
     GAPS = [(0x1C0000, 0x1C2000)]
 
@@ -104,6 +105,7 @@ class MyNewECU(BaseECU):
 ```
 
 ### **2. Registering the Module**
+
 1. Add the export to `ecus/__init__.py`:
    ```python
    from .my_new_ecu import MyNewECU
@@ -116,21 +118,25 @@ class MyNewECU(BaseECU):
 
 ### ECU Support Matrix
 
-| ECU Module | GM Designation | Target Vehicles & Engines | Status | Read | Write | Security Access |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Bosch ME(D)9.6.1** | **GM E69** (MED9.6.1)<br>**GM E77** (ME9.6.1) | Saab 9-3 (2014), 9-4X (2011), 9-5 (2010–2011)<br>Opel/Vauxhall Insignia<br>GM North America & Holden Australia<br>*Engines: A20NHT, A28NER, A28NET, LP2, LAU* | ✅ **Tested & Working** | ✅ Full & Calib | ✅ Calibration | ✅ Level 1 (16-bit) |
-| **Bosch EDC16C39** | Bosch EDC16 | Saab 9-3 1.9 TiD/TTiD, Opel 1.9/2.0 CDTI | 🚧 **In Development** | 🚧 Full & Calib | 🚧 Calibration | 🚧 Level 1 & Level 7 |
-| **Bosch ME9.6** | GM E69 | Saab 9-3 / Opel 2.8T V6 (2006–2009) | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
-| **Trionic 8 (T8)** | Saab T8 | Saab 9-3 2.0t / 2.0T (B207E/L/R) | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
-| **Bosch EDC17C19** | Bosch EDC17 | Opel / Vauxhall 2.0 CDTI | 📋 **In Planning** | 📋 Planned | 📋 Planned | 📋 Planned |
+| ECU Module            | GM Designation                                | Target Vehicles & Engines                                                                                                                                     |                  Status                   |      Read       |                  Write                   |   Security Access    |
+| :-------------------- | :-------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------: | :-------------: | :--------------------------------------: | :------------------: |
+| **Bosch ME(D)9.6.1**  | **GM E69** (MED9.6.1)<br>**GM E77** (ME9.6.1) | Saab 9-3 (2014), 9-4X (2011), 9-5 (2010–2011)<br>Opel/Vauxhall Insignia<br>GM North America & Holden Australia<br>_Engines: A20NHT, A28NER, A28NET, LP2, LAU_ |          ✅ **Tested & Working**          | ✅ Full & Calib |              ✅ Calibration              | ✅ Level 1 (16-bit)  |
+| **Bosch EDC16C39**    | Bosch EDC16                                   | Saab 9-3 1.9 TiD/TTiD, Opel 1.9/2.0 CDTI                                                                                                                      |           🚧 **In Development**           | 🚧 Full & Calib |              🚧 Calibration              | 🚧 Level 1 & Level 7 |
+| **Bosch ME9.6**       | GM E69                                        | Saab 9-3 / Opel 2.8T V6 (2006–2009)                                                                                                                           |            📋 **In Planning**             |   📋 Planned    |                📋 Planned                |      📋 Planned      |
+| **Trionic 5.2 / 5.5** | Saab T5                                       | Saab 9000 / NG900 / early 9-3 B204/B234                                                                                                                       | 🧪 **Hardware-enabled, upstream-derived** |     ✅ Full     |                 ✅ Full                  |     SRAM loader      |
+| **Trionic 7 (T7)**    | Saab T7                                       | Saab 9-3 / 9-5 B205/B235                                                                                                                                      | 🧪 **Hardware-enabled, upstream-derived** |     ✅ Full     |     ✅ Full, protected gap preserved     |   ✅ KWP 0x05/0x06   |
+| **Trionic 8 (T8)**    | Saab T8                                       | Saab 9-3 2.0t / 2.0T (B207E/L/R)                                                                                                                              | 🧪 **Hardware-enabled, upstream-derived** |     ✅ Full     | ✅ Full image input, app partitions only |  ✅ GMLAN 0x01/0x02  |
+| **Bosch EDC17C19**    | Bosch EDC17                                   | Opel / Vauxhall 2.0 CDTI                                                                                                                                      |            📋 **In Planning**             |   📋 Planned    |                📋 Planned                |      📋 Planned      |
+
+The application still requires a connected adapter, live ECU identity, supported region, valid ECU checksum, fresh voltage evidence, explicit operator authorization, backup confirmation, protected-range handling, and post-write readback.
 
 ### Hardware Adapter Status
 
-| Interface Adapter | Implementation | Status |
-| :--- | :--- | :---: |
-| **Kvaser** | Official Kvaser `canlib` SDK | ✅ **Tested & Working** |
-| **J2534 PassThru** | Tactrix OpenPort, Scanmatik, Mongoose, etc. | 🚧 **In Development** |
-| **STN Interfaces** | STN11xx / STN22xx / OBDLink | 📋 **In Planning** |
+| Interface Adapter  | Implementation                              |         Status          |
+| :----------------- | :------------------------------------------ | :---------------------: |
+| **Kvaser**         | Official Kvaser `canlib` SDK                | ✅ **Tested & Working** |
+| **J2534 PassThru** | Tactrix OpenPort, Scanmatik, Mongoose, etc. |  🚧 **In Development**  |
+| **STN Interfaces** | STN11xx / STN22xx / OBDLink                 |   📋 **In Planning**    |
 
 ---
 
@@ -168,11 +174,13 @@ pip install -r requirements.txt
 ### 2. Launching the Application
 
 #### **Command Line Interface (CLI)**
+
 ```powershell
 .venv\Scripts\python flasher_cli.py
 ```
 
 #### **PyQt5 Graphical Interface (GUI)**
+
 ```powershell
 .venv\Scripts\python gui_main.py
 ```
@@ -191,7 +199,7 @@ pip install -r requirements.txt
 
 ## ⚠️ Disclaimer
 
-*This software is intended for educational, diagnostic, and research purposes only. Flashing engine control units carries inherent risks of bricking the ECU if interrupted or misused. Always maintain a full backup of your original ECU software and ensure a stable 12V+ power supply during read/write operations.*
+_This software is intended for educational, diagnostic, and research purposes only. Flashing engine control units carries inherent risks of bricking the ECU if interrupted or misused. Always maintain a full backup of your original ECU software and ensure a stable 12V+ power supply during read/write operations._
 
 ---
 

@@ -1,6 +1,12 @@
-from typing import Tuple
-# pyrefly: ignore [missing-import]
-from canlib import canlib, Frame
+from typing import List, Optional, Tuple
+
+try:
+    from canlib import canlib, Frame
+    HAS_KVASER = True
+except ImportError:
+    canlib = None
+    Frame = None
+    HAS_KVASER = False
 from .base_adapter import BaseAdapter
 
 class KvaserAdapter(BaseAdapter):

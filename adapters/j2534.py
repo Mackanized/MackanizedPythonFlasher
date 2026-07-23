@@ -1,17 +1,41 @@
-﻿import ctypes
+import ctypes
 import platform
-import winreg
+from pathlib import Path
+try:
+    import winreg
+except ImportError:
+    winreg = None  # Non-Windows platform fallback
 from typing import List, Dict, Optional, Tuple
 
 from .base_adapter import BaseAdapter
+from domain.errors import AdapterError, AdapterOpenError, ConfigurationError
 from logger import app_logger
 
-# ── J2534 Constants ──────────────────────────────────────────────────
+RX_STATUS_TX_MSG_TYPE = 0x01
 PROTOCOL_CAN = 5  # J2534 Protocol ID for raw CAN (Kvaser uses 5; some drivers use 6)
 PASS_FILTER = 1
 CONNECT_FLAG_NONE = 0
 TX_FLAG_NONE = 0
 TX_FLAG_29BIT_ID = 0x00000001
+
+
+def get_pe_architecture(dll_path: str):
+    """Analyze a DLL file header to determine if it is 32-bit (x86) or 64-bit (x64)."""
+    try:
+        with open(dll_path, "rb") as handle:
+            header = handle.read(4096)
+            if header[:2] != b"MZ":
+                return "unknown"
+            pe_offset = int.from_bytes(header[0x3C:0x40], "little")
+            machine = int.from_bytes(header[pe_offset + 4:pe_offset + 6], "little")
+            if machine == 0x014C:
+                return 32
+            elif machine == 0x8664:
+                return 64
+    except Exception:
+        pass
+    return "unknown"
+
 
 STATUS_NOERROR = 0x00
 ERR_NOT_SUPPORTED = 0x16  # Code 22
@@ -58,33 +82,57 @@ class PASSTHRU_MSG(ctypes.Structure):
 
 
 # ── Device discovery ─────────────────────────────────────────────────
-def get_installed_j2534_devices() -> List[Dict[str, str]]:
-    devices = []
-    is_64bit = platform.architecture()[0] == '64bit'
+def get_installed_j2534_devices(registry_module=None) -> List[Dict[str, str]]:
+    """Return registered J2534 devices, or an empty list off Windows."""
+    reg = winreg if registry_module is None else registry_module
+    if reg is None:
+        return []
 
-    if is_64bit:
-        reg_paths = [r"SOFTWARE\PassThruSupport.04.04"]
-    else:
-        reg_paths = [r"SOFTWARE\WOW6432Node\PassThruSupport.04.04"]
+    devices = []
+    seen_dlls = set()
+    process_bits = ctypes.sizeof(ctypes.c_void_p) * 8
+    reg_paths = [
+        r"SOFTWARE\PassThruSupport.04.04",
+        r"SOFTWARE\WOW6432Node\PassThruSupport.04.04",
+    ]
 
     for reg_path in reg_paths:
         try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
-            num_subkeys = winreg.QueryInfoKey(key)[0]
+            key = reg.OpenKey(reg.HKEY_LOCAL_MACHINE, reg_path)
+        except (FileNotFoundError, OSError):
+            continue
+
+        try:
+            num_subkeys = reg.QueryInfoKey(key)[0]
             for i in range(num_subkeys):
-                device_key_name = winreg.EnumKey(key, i)
-                device_key = winreg.OpenKey(key, device_key_name)
+                device_key_name = reg.EnumKey(key, i)
                 try:
-                    name, _ = winreg.QueryValueEx(device_key, "Name")
-                    dll_path, _ = winreg.QueryValueEx(device_key, "FunctionLibrary")
-                    devices.append({"name": name, "dll": dll_path})
-                except FileNotFoundError:
+                    device_key = reg.OpenKey(key, device_key_name)
+                except (FileNotFoundError, OSError):
+                    continue
+                try:
+                    name, _ = reg.QueryValueEx(device_key, "Name")
+                    dll_path, _ = reg.QueryValueEx(device_key, "FunctionLibrary")
+                    normalized = str(dll_path).lower()
+                    if normalized in seen_dlls:
+                        continue
+                    if not Path(dll_path).is_file():
+                        continue
+                    architecture = get_pe_architecture(dll_path)
+                    if architecture != "unknown" and architecture != process_bits:
+                        continue
+                    seen_dlls.add(normalized)
+                    devices.append({
+                        "name": name,
+                        "dll": dll_path,
+                        "architecture": str(architecture),
+                    })
+                except (FileNotFoundError, OSError):
                     continue
                 finally:
-                    winreg.CloseKey(device_key)
-            winreg.CloseKey(key)
-        except FileNotFoundError:
-            continue
+                    reg.CloseKey(device_key)
+        finally:
+            reg.CloseKey(key)
     return devices
 
 
@@ -96,6 +144,7 @@ class J2534Adapter(BaseAdapter):
                 0x7ED, 0x7EE, 0x7EF}
 
     def __init__(self, dll_path: Optional[str] = None, channel: int = 0):
+        super().__init__()
         self.dll_path = dll_path
         self.dll = None
         self.device_id = ctypes.c_ulong(0)
@@ -103,8 +152,15 @@ class J2534Adapter(BaseAdapter):
         self.filter_id = ctypes.c_ulong(0)
         self._connected = False
         self._protocol_id = PROTOCOL_CAN
+        self._last_tx_frame: Optional[Tuple[int, bytes]] = None
 
     def load_dll(self, dll_path: str) -> bool:
+        architecture = get_pe_architecture(dll_path)
+        process_bits = ctypes.sizeof(ctypes.c_void_p) * 8
+        if architecture != "unknown" and architecture != process_bits:
+            raise ConfigurationError(
+                f"J2534 DLL architecture {architecture}-bit does not match the current Python process ({process_bits}-bit)."
+            )
         try:
             self.dll = ctypes.WinDLL(dll_path)
             self._setup_prototypes()
@@ -152,16 +208,9 @@ class J2534Adapter(BaseAdapter):
         )
         used_protocol = PROTOCOL_CAN
         if res != STATUS_NOERROR:
-            app_logger.debug(f"[J2534] Connect with proto={PROTOCOL_CAN} failed: {res} (0x{res:02X}), trying proto=6")
-            res = self.dll.PassThruConnect(
-                self.device_id, 6, CONNECT_FLAG_NONE,
-                baudrate, ctypes.byref(self.channel_id)
-            )
-            used_protocol = 6
-        if res != STATUS_NOERROR:
             print(f"[J2534] PassThruConnect failed: {res} (0x{res:02X})")
             self.dll.PassThruClose(self.device_id)
-            return False
+            raise AdapterOpenError("J2534 raw CAN PassThruConnect failed", vendor_code=res)
         app_logger.debug(f"[J2534] Connected with protocol={used_protocol}, channel={self.channel_id.value}")
         self._protocol_id = used_protocol
 
@@ -180,16 +229,28 @@ class J2534Adapter(BaseAdapter):
         if res != STATUS_NOERROR:
             app_logger.debug(f"[J2534] IOCTL_SET_CONFIG (pins) failed: {res} (0x{res:02X}) — ignoring")
 
-        # Set up a pass-all filter for 11-bit CAN IDs
-        # Mask=0x7FF, Pattern=0x000 → accept all standard 11-bit IDs
+        if not self._setup_pass_all_filter():
+            self.disconnect()
+            return False
+
+        # Clear RX buffer after filter setup
+        self.dll.PassThruIoctl(self.channel_id, IOCTL_CLEAR_RX_BUFFER, None, None)
+
+        self._connected = True
+        print(f"[J2534] Connected successfully at {baudrate} bps.")
+        return True
+
+    def _setup_pass_all_filter(self) -> bool:
+        # Pass-all filter. Some J2534 drivers require both mask and pattern to
+        # be zero for raw CAN reception.
         mask_msg = PASSTHRU_MSG()
         ctypes.memset(ctypes.byref(mask_msg), 0, ctypes.sizeof(mask_msg))
         mask_msg.ProtocolID = self._protocol_id
         mask_msg.DataSize = 4
         mask_msg.Data[0] = 0x00
         mask_msg.Data[1] = 0x00
-        mask_msg.Data[2] = 0x07
-        mask_msg.Data[3] = 0xFF
+        mask_msg.Data[2] = 0x00
+        mask_msg.Data[3] = 0x00
 
         pattern_msg = PASSTHRU_MSG()
         ctypes.memset(ctypes.byref(pattern_msg), 0, ctypes.sizeof(pattern_msg))
@@ -214,11 +275,6 @@ class J2534Adapter(BaseAdapter):
         if res == ERR_NOT_SUPPORTED:
             app_logger.debug("[J2534] Pass-all filter not supported, continuing without filter.")
 
-        # Clear RX buffer after filter setup
-        self.dll.PassThruIoctl(self.channel_id, IOCTL_CLEAR_RX_BUFFER, None, None)
-
-        self._connected = True
-        print(f"[J2534] Connected successfully at {baudrate} bps.")
         return True
 
     def disconnect(self) -> None:
@@ -238,6 +294,12 @@ class J2534Adapter(BaseAdapter):
     def check_bus_status(self):
         """J2534 does not expose hardware bus status flags like Kvaser."""
         print("  [OK] J2534 bus status not available (handled by PassThru driver).")
+        return self._connected
+
+    def read_battery_voltage(self):
+        if not self._connected or not self.dll:
+            return None
+        return None
 
     def send_frame(self, can_id: int, data: bytes) -> bool:
         if not self._connected:
@@ -267,9 +329,13 @@ class J2534Adapter(BaseAdapter):
             ctypes.byref(num_msgs), 1000
         )
         if res == STATUS_NOERROR:
+            self._last_tx_frame = (can_id, bytes(data))
+            self._record_tx(len(data))
             return True
         if res == ERR_TIMEOUT and can_id == 0x101:
             app_logger.debug(f"[J2534] Functional TX on 0x{can_id:03X} returned ERR_TIMEOUT (expected for broadcast)")
+            self._last_tx_frame = (can_id, bytes(data))
+            self._record_tx(len(data))
             return True
         app_logger.debug(f"[J2534] send_frame FAILED: can_id=0x{can_id:03X}, res=0x{res:02X}, data={data.hex()}")
         return False
@@ -301,10 +367,20 @@ class J2534Adapter(BaseAdapter):
             payload_len = msg.DataSize - 4
             if payload_len <= 0:
                 return 0, b""
+            payload = bytes(msg.Data[4:4 + payload_len])
+
+            if msg.RxStatus & RX_STATUS_TX_MSG_TYPE:
+                app_logger.debug("[J2534] Discarded PassThru TX echo frame.")
+                return 0, b""
+            if msg.RxStatus & 0x20:
+                if self._last_tx_frame == (rx_can_id, payload):
+                    app_logger.debug("[J2534] Discarded vendor-marked exact TX echo frame.")
+                    return 0, b""
+                raise AdapterError("J2534 RX error indication", vendor_code=msg.RxStatus)
 
             # Filter to diagnostic IDs only (matching Kvaser behavior)
             if rx_can_id in self.DIAG_IDS:
-                payload = bytes(msg.Data[4:4 + payload_len])
+                self._record_rx(len(payload))
                 return rx_can_id, payload
 
             return 0, b""

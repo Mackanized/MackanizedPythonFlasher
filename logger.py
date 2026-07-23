@@ -35,3 +35,21 @@ def setup_logger(name: str, log_file: str, level=logging.DEBUG) -> logging.Logge
 # Global loggers for different system components
 can_logger = setup_logger("CAN_TRACE", "cantrace.log")
 app_logger = setup_logger("APP_DEBUG", "flasher.log")
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def operation_log_context(operation_id: str, ecu_name: str = ""):
+    token = f"[{operation_id}:{ecu_name}] " if ecu_name else f"[{operation_id}] "
+    app_logger.info(f"{token}Operation context started")
+    try:
+        yield
+    finally:
+        app_logger.info(f"{token}Operation context finished")
+
+
+def configure_logging(log_dir: str = "logs", level=logging.DEBUG):
+    os.makedirs(log_dir, exist_ok=True)
+    app_logger.setLevel(level)
+    can_logger.setLevel(level)

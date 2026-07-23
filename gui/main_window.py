@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from adapters.mock_adapter import MockAdapter
 from adapters.kvaser import KvaserAdapter
 from adapters.j2534 import J2534Adapter
 from gui.styles import apply_dark_theme
@@ -141,7 +142,9 @@ class MainWindow(QMainWindow):
 
     def _create_adapter(self):
         key = self._step_adapter.get_adapter_key()
-        if key == "kvaser":
+        if key == "mock":
+            self._adapter = MockAdapter()
+        elif key == "kvaser":
             self._adapter = KvaserAdapter()
         else:
             dll_path = self._step_adapter.get_j2534_dll()

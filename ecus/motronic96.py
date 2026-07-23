@@ -1,9 +1,11 @@
-﻿from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple
+from domain.memory_map import AddressRange
 from .base_ecu import BaseECU, Step
 
 
 class Motronic96(BaseECU):
     NAME = "Bosch ME9.6"
+    REGISTRY_KEY = "me96"
     CAN_ID_TX = 0x7E0
     CAN_ID_RX = 0x7E8
     SECURITY_LEVEL = 0x01
@@ -17,8 +19,8 @@ class Motronic96(BaseECU):
 
     ERASE_SIZE = 0x180000
 
-    def get_flash_addresses(self) -> List[Tuple[int, int]]:
-        return [(0x000000, 0x200000)]
+    def get_flash_addresses(self) -> List[AddressRange]:
+        return [AddressRange(0x000000, 0x200000)]
 
     def get_flash_regions(self) -> Dict[str, Tuple[int, int, str]]:
         return {

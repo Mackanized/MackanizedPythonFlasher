@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mackanized-flasher"
+version = "0.1.0"
+description = "Safety-focused ECU diagnostics and flashing workstation"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = { text = "MIT" }
+authors = [
+  { name = "Markus Södergren / Mackanized" },
+  { name = "CMS DriveTech AB" },
+]
+dependencies = [
+  "python-can>=4.3,<5",
+  "pyserial>=3.5,<4",
+  "PySide6>=6.7,<7",
+  "pywebview>=5,<7",
+]
+
+[project.optional-dependencies]
+kvaser = ["canlib>=1.22,<2"]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+mackanized-flasher = "flasher_cli:main"
+
+[tool.setuptools]
+py-modules = ["flasher", "flasher_cli", "logger", "run_web"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+  "adapters*",
+  "application*",
+  "domain*",
+  "ecus*",
+  "firmware*",
+  "gui*",
+  "infrastructure*",
+  "protocols*",
+  "security*",
+]
+exclude = ["tests*", "web*"]
+
+[tool.setuptools.package-data]
+"firmware.trionic" = ["loaders/*.bin", "loaders/*.s19", "loaders/*.json"]
+"firmware.medc17" = ["*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

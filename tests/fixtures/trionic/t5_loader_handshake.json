@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "T5 loader address/data/start handshake",
+  "ecu": "t5",
+  "evidence": "synthetic-reference",
+  "frames": [
+    {"direction": "tx", "can_id": "0x005", "data": "A5 00 00 50 00 07 00 00", "note": "select seven SRAM bytes"},
+    {"direction": "rx", "can_id": "0x00C", "data": "A5 00 00 00 00 00 00 00", "note": "address accepted"},
+    {"direction": "tx", "can_id": "0x005", "data": "00 11 22 33 44 55 66 77", "note": "offset plus seven bytes"},
+    {"direction": "rx", "can_id": "0x00C", "data": "00 00 00 00 00 00 00 00", "note": "data accepted"},
+    {"direction": "tx", "can_id": "0x005", "data": "C1 00 00 50 00 00 00 00", "note": "execute SRAM loader"},
+    {"direction": "rx", "can_id": "0x00C", "data": "C1 00 00 00 00 00 00 00", "note": "loader start accepted"}
+  ]
+}
+
